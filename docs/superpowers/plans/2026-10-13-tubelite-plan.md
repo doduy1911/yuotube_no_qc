@@ -50,7 +50,7 @@
 
 **Interfaces:** VideoSummary, VideoDetails, getVideo(videoId), load(videoId, startPositionMs?), play, pause, seekTo, stop và playbackState theo spec.
 
-- [ ] Viết kiểm tra chuẩn hóa watch/youtu.be/shorts URL, link sai và domain giả; chạy thấy lỗi trước khi hiện thực.
+- [x] Viết kiểm tra chuẩn hóa watch/youtu.be/shorts URL, link sai và domain giả; chạy thấy lỗi trước khi hiện thực.
 - [ ] Tích hợp NewPipe Extractor, downloader, desugaring và lỗi typed trên background dispatcher.
 - [ ] Tạo MediaSessionService/ExoPlayer và Fabric video view, kết nối qua MediaController.
 - [ ] Triển khai dán link → video ID → lấy nguồn → phát; hỗ trợ progressive và hình/tiếng tách riêng.
