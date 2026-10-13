@@ -82,19 +82,21 @@
 - [x] Triển khai PiP trên cùng media session; cập nhật tỷ lệ theo video; khi Home thì PiP tiếp tục video, notification vẫn có điều khiển media.
 - [ ] Kiểm tra thêm trên máy ảo: khóa màn hình, xoay và quay lại từ PiP không tạo player thứ hai.
 - [x] Ghi giới hạn thiết bị: audio focus khi rút tai nghe chưa xác minh bằng thiết bị thật.
-- [ ] Commit `feat: add playback controls background audio and picture in picture`.
+- [x] Commit `feat: add playback controls background audio and picture in picture`.
 
 ## Task 5 — Lịch sử và yêu thích
 
 **Interfaces:** getHistory, getFavorites, setFavorite(videoId, enabled), clearHistory; dữ liệu theo spec.
 
-- [ ] Viết Room tests cho upsert theo video ID, persistence và xóa lịch sử không mất yêu thích.
-- [ ] Tạo Room database; lưu metadata, vị trí, thời điểm xem, trạng thái yêu thích.
-- [ ] Service lưu vị trí mỗi 5 giây và khi pause/stop/chuyển video, không dựa vào JavaScript.
-- [ ] Xây màn hình thư viện, danh sách xem gần đây trên trang chính và trạng thái trống.
+- [x] Viết Room tests cho upsert theo video ID, persistence và xóa lịch sử không mất yêu thích.
+- [x] Tạo Room database; lưu metadata, vị trí, thời điểm xem, trạng thái yêu thích.
+- [x] Service lưu vị trí mỗi 5 giây và khi pause/stop/chuyển video, không dựa vào JavaScript.
+- [x] Xây màn hình thư viện, danh sách xem gần đây trên trang chính và trạng thái trống.
 - [ ] Mở lại video tiếp tục vị trí lưu; video đã kết thúc bắt đầu lại từ đầu khi người dùng mở lần nữa.
-- [ ] Kiểm tra đóng/mở app, yêu thích trùng, xóa lịch sử và phát nền cập nhật vị trí.
-- [ ] Commit `feat: persist watch history favorites and resume position`.
+- [x] Kiểm tra xóa lịch sử vẫn giữ video yêu thích trên emulator; xác nhận video phát từ tìm kiếm xuất hiện trong lịch sử.
+- [ ] Xác minh mở lại video tiếp tục chính xác vị trí đã lưu và video kết thúc bắt đầu lại từ đầu.
+- [ ] Kiểm tra tắt/mở app, thao tác yêu thích lặp và cập nhật vị trí khi phát nền.
+- [x] Commit `feat: persist watch history favorites and resume position`.
 
 ## Task 6 — Kiểm tra tổng thể và APK
 

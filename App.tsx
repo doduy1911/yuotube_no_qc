@@ -1,4 +1,4 @@
-import React, {useRef, useState} from 'react';
+import React, {useCallback, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -27,6 +27,7 @@ import {
 } from './src/domain/youtubeSearch';
 
 function App() {
+  type LibraryVideo = VideoSummary & {positionMs: number; lastWatchedAt: number; isFavorite: boolean};
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<VideoSummary[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -35,10 +36,35 @@ function App() {
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const generation = useRef(0);
   const loadingMore = useRef(false);
+  const [activeTab, setActiveTab] = useState<'home' | 'library'>('home');
+  const [libraryMode, setLibraryMode] = useState<'history' | 'favorites'>('history');
+  const [history, setHistory] = useState<LibraryVideo[]>([]);
+  const [favorites, setFavorites] = useState<LibraryVideo[]>([]);
+
+  const loadLibrary = useCallback(async () => {
+    try {
+      const [historyJson, favoritesJson] = await Promise.all([
+        NativeVideoExtractor.getHistory(), NativeVideoExtractor.getFavorites(),
+      ]);
+      const mapRows = (raw: string): LibraryVideo[] => JSON.parse(raw).map((row: any) => ({
+        videoId: row.videoId, title: row.title, channelTitle: row.channelTitle,
+        thumbnailUrl: row.thumbnailUrl, publishedAt: null, durationMs: row.durationMs,
+        positionMs: row.positionMs, lastWatchedAt: row.lastWatchedAt, isFavorite: row.isFavorite,
+      }));
+      setHistory(mapRows(historyJson));
+      setFavorites(mapRows(favoritesJson));
+    } catch {
+      setHistory([]);
+      setFavorites([]);
+    }
+  }, []);
+
+  React.useEffect(() => { loadLibrary(); }, [loadLibrary]);
 
   async function openVideo(videoId: string) {
     try {
       await NativeVideoExtractor.openVideo(videoId, '');
+      loadLibrary();
     } catch {
       Alert.alert('Chưa mở được video', 'Không lấy được nguồn phát. Bạn thử lại sau nhé.');
     }
@@ -110,6 +136,30 @@ function App() {
         </View>
 
         <View style={styles.content}>
+          {activeTab === 'library' ? <>
+            <View style={styles.libraryHeading}>
+              <Text style={styles.sectionTitle}>Thư viện</Text>
+              {libraryMode === 'history' && history.length > 0 ? (
+                <Pressable accessibilityRole="button" onPress={() => Alert.alert('Xóa lịch sử xem?', 'Video yêu thích vẫn được giữ lại.', [
+                  {text: 'Hủy', style: 'cancel'}, {text: 'Xóa', style: 'destructive', onPress: async () => { await NativeVideoExtractor.clearHistory(); await loadLibrary(); }},
+                ])}><Text style={styles.clearHistory}>Xóa</Text></Pressable>
+              ) : null}
+            </View>
+            <View style={styles.libraryTabs}>
+              <Pressable onPress={() => setLibraryMode('history')} style={[styles.libraryTab, libraryMode === 'history' && styles.libraryTabSelected]}><Text style={styles.libraryTabText}>Đã xem</Text></Pressable>
+              <Pressable onPress={() => setLibraryMode('favorites')} style={[styles.libraryTab, libraryMode === 'favorites' && styles.libraryTabSelected]}><Text style={styles.libraryTabText}>Yêu thích</Text></Pressable>
+            </View>
+            <FlatList data={libraryMode === 'history' ? history : favorites} keyExtractor={item => item.videoId}
+              ListEmptyComponent={<Text style={styles.libraryEmpty}>{libraryMode === 'history' ? 'Video đã xem sẽ xuất hiện ở đây.' : 'Video yêu thích sẽ xuất hiện ở đây.'}</Text>}
+              renderItem={({item}) => <View style={styles.libraryRow}>
+                <Pressable accessibilityRole="button" onPress={() => openVideo(item.videoId)} style={styles.libraryVideo}>
+                  {item.thumbnailUrl ? <Image source={{uri: item.thumbnailUrl}} style={styles.thumbnail} /> : <View style={styles.thumbnailFallback} />}
+                  <View style={styles.resultCopy}><Text numberOfLines={2} style={styles.resultTitle}>{item.title}</Text><Text numberOfLines={1} style={styles.resultMeta}>{item.positionMs > 0 ? 'Tiếp tục xem video' : (item.channelTitle || 'Video YouTube')}</Text></View>
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={item.isFavorite ? 'Bỏ yêu thích' : 'Thêm yêu thích'} onPress={async () => { await NativeVideoExtractor.setFavorite(item.videoId, !item.isFavorite); await loadLibrary(); }}><Text style={styles.favoriteButton}>{item.isFavorite ? '♥' : '♡'}</Text></Pressable>
+              </View>}
+            />
+          </> : <>
           <Text style={styles.sectionTitle}>Khám phá video</Text>
           <View style={styles.searchBox}>
             <Text style={styles.searchIcon}>⌕</Text>
@@ -176,7 +226,7 @@ function App() {
             />
           ) : null}
 
-          {!isSearching && results.length === 0 && !searchError ? <View testID="home-empty-state" style={styles.emptyState}>
+          {!isSearching && results.length === 0 && !searchError && history.length === 0 ? <View testID="home-empty-state" style={styles.emptyState}>
             <View style={styles.emptyIconRing}>
               <View style={styles.emptyPlayTriangle} />
             </View>
@@ -189,17 +239,25 @@ function App() {
                 : 'Tìm kiếm một chủ đề hoặc dán liên kết video để bắt đầu.'}
             </Text>
           </View> : null}
+          {!query.trim() && results.length === 0 && history.length > 0 ? <View style={styles.recentSection}>
+            <Text style={styles.recentHeading}>Xem gần đây</Text>
+            <FlatList horizontal data={history.slice(0, 6)} keyExtractor={item => item.videoId} renderItem={({item}) => <Pressable accessibilityRole="button" onPress={() => openVideo(item.videoId)} style={styles.recentCard}>
+              {item.thumbnailUrl ? <Image source={{uri: item.thumbnailUrl}} style={styles.recentThumbnail} /> : <View style={styles.recentThumbnail} />}
+              <Text numberOfLines={2} style={styles.recentTitle}>{item.title}</Text>
+            </Pressable>} />
+          </View> : null}
+          </>}
         </View>
 
         <View style={styles.bottomBar}>
-          <View style={styles.navItem}>
-            <Text style={styles.navIconActive}>⌂</Text>
-            <Text style={styles.navLabelActive}>Trang chủ</Text>
-          </View>
-          <View style={styles.navItem}>
-            <Text style={styles.navIcon}>◷</Text>
-            <Text style={styles.navLabel}>Thư viện</Text>
-          </View>
+          <Pressable accessibilityLabel="Open home" onPress={() => { setActiveTab('home'); loadLibrary(); }} style={styles.navItem}>
+            <Text style={activeTab === 'home' ? styles.navIconActive : styles.navIcon}>⌂</Text>
+            <Text style={activeTab === 'home' ? styles.navLabelActive : styles.navLabel}>Trang chủ</Text>
+          </Pressable>
+          <Pressable accessibilityLabel="Open library" onPress={() => { setActiveTab('library'); loadLibrary(); }} style={styles.navItem}>
+            <Text style={activeTab === 'library' ? styles.navIconActive : styles.navIcon}>◷</Text>
+            <Text style={activeTab === 'library' ? styles.navLabelActive : styles.navLabel}>Thư viện</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -432,6 +490,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
   },
+  libraryHeading: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
+  clearHistory: {color: '#ff6259', fontSize: 13, fontWeight: '600', padding: 8},
+  libraryTabs: {flexDirection: 'row', gap: 10, marginBottom: 12},
+  libraryTab: {paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1b1b1b'},
+  libraryTabSelected: {backgroundColor: '#4a201d'},
+  libraryTabText: {color: '#f4f4f4', fontSize: 13},
+  libraryEmpty: {color: '#999', textAlign: 'center', marginTop: 70, fontSize: 14},
+  libraryRow: {flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#282828'},
+  libraryVideo: {flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10},
+  favoriteButton: {color: '#ff5147', fontSize: 24, paddingHorizontal: 8},
+  recentSection: {marginTop: 18},
+  recentHeading: {color: '#f7f7f7', fontSize: 16, fontWeight: '700', marginBottom: 10},
+  recentCard: {width: 150, marginRight: 12},
+  recentThumbnail: {width: 150, height: 84, borderRadius: 8, backgroundColor: '#191919'},
+  recentTitle: {color: '#ddd', fontSize: 12, marginTop: 6},
 });
 
 export default App;

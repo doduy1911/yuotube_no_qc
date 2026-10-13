@@ -27,6 +27,14 @@ class PlaybackService : MediaSessionService() {
   private var refreshAttempted = false
   private val resolver = Executors.newSingleThreadExecutor()
   private val mainHandler = Handler(Looper.getMainLooper())
+  private val storage = Executors.newSingleThreadExecutor()
+  private var currentMetadata: VideoMetadata? = null
+  private val saveProgress = object : Runnable {
+    override fun run() {
+      persistPosition()
+      if (currentVideoId.isNotBlank() && player.isPlaying) mainHandler.postDelayed(this, 5_000)
+    }
+  }
 
   override fun onCreate() {
     super.onCreate()
@@ -35,6 +43,17 @@ class PlaybackService : MediaSessionService() {
       .setHandleAudioBecomingNoisy(true)
       .build()
     player.addListener(object : Player.Listener {
+      override fun onIsPlayingChanged(isPlaying: Boolean) {
+        mainHandler.removeCallbacks(saveProgress)
+        if (isPlaying) mainHandler.postDelayed(saveProgress, 5_000) else persistPosition()
+      }
+
+      override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState == Player.STATE_ENDED) {
+          storage.execute { currentMetadata?.let { VideoHistoryStore.recordVideo(this@PlaybackService, it, 0L) } }
+        }
+      }
+
       override fun onPlayerError(error: PlaybackException) {
         if (!PlaybackPolicy.shouldRefreshSource(error.errorCode, refreshAttempted)) {
           val message = if (refreshAttempted) {
@@ -87,8 +106,15 @@ class PlaybackService : MediaSessionService() {
           intent.getStringExtra(EXTRA_TITLE) ?: "TubeLite",
           qualityId,
           intent.getStringExtra(EXTRA_AUDIO_URL),
+          VideoMetadata(
+            videoId,
+            intent.getStringExtra(EXTRA_TITLE) ?: "TubeLite",
+            intent.getStringExtra(EXTRA_CHANNEL_TITLE).orEmpty(),
+            intent.getStringExtra(EXTRA_THUMBNAIL_URL),
+            intent.getLongExtra(EXTRA_DURATION_MS, 0L),
+          ),
         )
-        val position = if (intent.action == ACTION_CHANGE_QUALITY) player.currentPosition else 0L
+        val position = if (intent.action == ACTION_CHANGE_QUALITY) player.currentPosition else intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
         setStream(resolved, videoId, position, resetRetry = true)
       }
     }
@@ -96,9 +122,12 @@ class PlaybackService : MediaSessionService() {
   }
 
   override fun onDestroy() {
+    persistPosition()
+    mainHandler.removeCallbacks(saveProgress)
     mediaSession?.release()
     player.release()
     resolver.shutdownNow()
+    storage.shutdown()
     super.onDestroy()
   }
 
@@ -110,6 +139,8 @@ class PlaybackService : MediaSessionService() {
   ) {
     currentVideoId = videoId
     currentQualityId = resolved.qualityId
+    currentMetadata = resolved.metadata
+    storage.execute { VideoHistoryStore.recordVideo(this, resolved.metadata, positionMs) }
     if (resetRetry) refreshAttempted = false
     val metadata = MediaMetadata.Builder()
       .setTitle(resolved.title)
@@ -138,6 +169,12 @@ class PlaybackService : MediaSessionService() {
     player.play()
   }
 
+  private fun persistPosition() {
+    val id = currentVideoId
+    val position = player.currentPosition
+    if (id.isNotBlank()) storage.execute { VideoHistoryStore.savePosition(this, id, position) }
+  }
+
   companion object {
     private const val ACTION_PLAY = "com.tubelite.action.PLAY"
     private const val ACTION_CHANGE_QUALITY = "com.tubelite.action.CHANGE_QUALITY"
@@ -146,8 +183,12 @@ class PlaybackService : MediaSessionService() {
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_VIDEO_ID = "video_id"
     private const val EXTRA_QUALITY_ID = "quality_id"
+    private const val EXTRA_CHANNEL_TITLE = "channel_title"
+    private const val EXTRA_THUMBNAIL_URL = "thumbnail_url"
+    private const val EXTRA_DURATION_MS = "duration_ms"
+    private const val EXTRA_START_POSITION_MS = "start_position_ms"
 
-    internal fun start(context: Context, resolved: ResolvedVideoStream, videoId: String) {
+    internal fun start(context: Context, resolved: ResolvedVideoStream, videoId: String, startPositionMs: Long) {
       val intent = Intent(context, PlaybackService::class.java)
         .setAction(ACTION_PLAY)
         .putExtra(EXTRA_STREAM_URL, resolved.videoUrl)
@@ -155,6 +196,10 @@ class PlaybackService : MediaSessionService() {
         .putExtra(EXTRA_TITLE, resolved.title)
         .putExtra(EXTRA_VIDEO_ID, videoId)
         .putExtra(EXTRA_QUALITY_ID, resolved.qualityId)
+        .putExtra(EXTRA_CHANNEL_TITLE, resolved.metadata.channelTitle)
+        .putExtra(EXTRA_THUMBNAIL_URL, resolved.metadata.thumbnailUrl)
+        .putExtra(EXTRA_DURATION_MS, resolved.metadata.durationMs)
+        .putExtra(EXTRA_START_POSITION_MS, startPositionMs)
       ContextCompat.startForegroundService(context, intent)
     }
 
@@ -166,6 +211,9 @@ class PlaybackService : MediaSessionService() {
         .putExtra(EXTRA_TITLE, resolved.title)
         .putExtra(EXTRA_VIDEO_ID, videoId)
         .putExtra(EXTRA_QUALITY_ID, resolved.qualityId)
+        .putExtra(EXTRA_CHANNEL_TITLE, resolved.metadata.channelTitle)
+        .putExtra(EXTRA_THUMBNAIL_URL, resolved.metadata.thumbnailUrl)
+        .putExtra(EXTRA_DURATION_MS, resolved.metadata.durationMs)
       ContextCompat.startForegroundService(context, intent)
     }
   }

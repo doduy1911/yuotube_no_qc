@@ -17,6 +17,10 @@ jest.mock('../src/native/specs/NativeVideoExtractor', () => ({
   default: {
     getVideoDetails: jest.fn(),
     openVideo: jest.fn().mockResolvedValue(true),
+    getHistory: jest.fn().mockResolvedValue('[]'),
+    getFavorites: jest.fn().mockResolvedValue('[]'),
+    setFavorite: jest.fn().mockResolvedValue(true),
+    clearHistory: jest.fn().mockResolvedValue(true),
   },
 }));
 jest.mock('../src/native/YouTubeSearch', () => ({
@@ -90,4 +94,27 @@ test('a late response from an older query cannot replace newer results', async (
 
   expect(app!.root.findByProps({children: 'Second query result'})).toBeTruthy();
   expect(app!.root.findAllByProps({children: 'First query result'})).toHaveLength(0);
+});
+
+test('opens the library and renders persisted history and favorites', async () => {
+  const stored = JSON.stringify([{
+    videoId: 'dQw4w9WgXcQ', title: 'Saved video', channelTitle: 'Channel',
+    thumbnailUrl: null, durationMs: 120000, positionMs: 30000,
+    lastWatchedAt: 10, isFavorite: true,
+  }]);
+  const native = require('../src/native/specs/NativeVideoExtractor').default;
+  native.getHistory.mockResolvedValue(stored);
+  native.getFavorites.mockResolvedValue(stored);
+  let app: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+  });
+  await ReactTestRenderer.act(async () => {
+    app!.root.findByProps({accessibilityLabel: 'Open library'}).props.onPress();
+    await Promise.resolve();
+  });
+  expect(app!.root.findByProps({children: 'Saved video'})).toBeTruthy();
+  expect(app!.root.findByProps({children: 'Tiếp tục xem video'})).toBeTruthy();
+  expect(app!.root.findByProps({accessibilityLabel: 'Bỏ yêu thích'})).toBeTruthy();
 });

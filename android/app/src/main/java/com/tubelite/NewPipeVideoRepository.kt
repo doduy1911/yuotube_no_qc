@@ -60,7 +60,13 @@ internal object NewPipeVideoRepository {
     val streams = playableStreams(info)
     val selected = streams.firstOrNull { it.id == qualityId } ?: chooseDefaultStream(streams)
       ?: throw IllegalStateException("No playable combined stream is available")
-    return ResolvedVideoStream(selected.videoUrl, info.name, selected.id, selected.audioUrl)
+    return ResolvedVideoStream(
+      selected.videoUrl, info.name, selected.id, selected.audioUrl,
+      VideoMetadata(
+        videoId, info.name, info.uploaderName, info.thumbnails.firstOrNull()?.url,
+        info.duration * 1000L,
+      ),
+    )
   }
 
   private fun playableStreams(info: StreamInfo): List<PlayableVideoStream> {
@@ -106,4 +112,5 @@ internal data class ResolvedVideoStream(
   val title: String,
   val qualityId: String,
   val audioUrl: String?,
+  val metadata: VideoMetadata,
 )

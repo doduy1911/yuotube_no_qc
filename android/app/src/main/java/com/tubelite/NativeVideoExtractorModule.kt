@@ -31,7 +31,10 @@ class NativeVideoExtractorModule(
       try {
         val resolved = NewPipeVideoRepository.resolveVideo(videoId, qualityId)
         val context = reactApplicationContext
-        PlaybackService.start(context, resolved, videoId)
+        val row = VideoHistoryDatabase.get(context).videoHistoryDao().getById(videoId)
+        val resumePosition = row?.positionMs?.takeIf { row.durationMs == 0L || it < row.durationMs - 10_000L } ?: 0L
+        VideoHistoryStore.recordVideo(context, resolved.metadata, resumePosition)
+        PlaybackService.start(context, resolved, videoId, resumePosition)
         context.startActivity(
           Intent(context, PlaybackActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
@@ -52,6 +55,47 @@ class NativeVideoExtractorModule(
       } catch (error: Throwable) {
         promise.reject("API_NETWORK_ERROR", error.message ?: "Không kết nối được YouTube API.", error)
       }
+    }
+  }
+
+  @ReactMethod
+  fun getHistory(promise: Promise) = getLibraryRows(favorites = false, promise)
+
+  @ReactMethod
+  fun getFavorites(promise: Promise) = getLibraryRows(favorites = true, promise)
+
+  @ReactMethod
+  fun setFavorite(videoId: String, enabled: Boolean, promise: Promise) {
+    executor.execute {
+      runCatching { VideoHistoryStore.setFavorite(reactApplicationContext, videoId, enabled) }
+        .onSuccess { promise.resolve(true) }
+        .onFailure { promise.reject("STORAGE_ERROR", "Không lưu được video yêu thích.", it) }
+    }
+  }
+
+  @ReactMethod
+  fun clearHistory(promise: Promise) {
+    executor.execute {
+      runCatching { VideoHistoryStore.clearHistory(reactApplicationContext) }
+        .onSuccess { promise.resolve(true) }
+        .onFailure { promise.reject("STORAGE_ERROR", "Không xóa được lịch sử xem.", it) }
+    }
+  }
+
+  private fun getLibraryRows(favorites: Boolean, promise: Promise) {
+    executor.execute {
+      runCatching {
+        val dao = VideoHistoryDatabase.get(reactApplicationContext).videoHistoryDao()
+        val rows = if (favorites) dao.getFavorites() else dao.getHistory()
+        org.json.JSONArray().also { array -> rows.forEach { row ->
+          array.put(org.json.JSONObject()
+            .put("videoId", row.videoId).put("title", row.title).put("channelTitle", row.channelTitle)
+            .put("thumbnailUrl", row.thumbnailUrl ?: org.json.JSONObject.NULL)
+            .put("durationMs", row.durationMs).put("positionMs", row.positionMs)
+            .put("lastWatchedAt", row.lastWatchedAt).put("isFavorite", row.isFavorite))
+        } }.toString()
+      }.onSuccess { promise.resolve(it) }
+        .onFailure { promise.reject("STORAGE_ERROR", "Không tải được thư viện.", it) }
     }
   }
 
