@@ -37,14 +37,14 @@
 
 ## Task 1 — Tài liệu, cấu hình và khung ứng dụng
 
-- [ ] Lưu spec và plan, tự đối chiếu phạm vi rồi commit `docs: add TubeLite specification and implementation plan`.
-- [ ] Khởi tạo React Native TypeScript trong kho hiện tại; applicationId com.tubelite, minSdk 26. Giữ file người dùng hiện có.
-- [ ] Khóa bộ phiên bản ổn định tương thích tại thời điểm triển khai và ghi trong lockfile/version catalog.
-- [ ] Tạo .env bằng key được người dùng cung cấp; .env.example chỉ có YOUTUBE_API_KEY=; cấu hình Git bỏ qua .env, node_modules, build artifacts và .idea.
-- [ ] Đọc .env từ Gradle, đưa key vào BuildConfig; thiếu key không làm crash ứng dụng.
-- [ ] Tạo khung màn hình tối tiếng Việt; chuẩn bị Codegen và native package.
-- [ ] Kiểm tra build, TypeScript và cấu hình không key; kiểm tra git diff/staged không có key.
-- [ ] Commit `chore: bootstrap React Native Android app and environment config`.
+- [x] Lưu spec và plan, tự đối chiếu phạm vi rồi commit `docs: add TubeLite specification and implementation plan`.
+- [x] Khởi tạo React Native TypeScript trong kho hiện tại; applicationId com.tubelite, minSdk 26. Giữ file người dùng hiện có.
+- [x] Khóa bộ phiên bản ổn định tương thích tại thời điểm triển khai và ghi trong lockfile/version catalog.
+- [x] Tạo .env bằng key được người dùng cung cấp; .env.example chỉ có YOUTUBE_API_KEY=; cấu hình Git bỏ qua .env, node_modules, build artifacts và .idea.
+- [x] Đọc .env từ Gradle, đưa key vào BuildConfig; thiếu key không làm crash ứng dụng.
+- [x] Tạo khung màn hình tối tiếng Việt; chuẩn bị Codegen và native package.
+- [x] Kiểm tra build, TypeScript và cấu hình không key; kiểm tra git diff/staged không có key.
+- [x] Commit `chore: bootstrap React Native Android app and environment config`.
 
 ## Task 2 — Trích xuất và luồng phát tối thiểu
 
