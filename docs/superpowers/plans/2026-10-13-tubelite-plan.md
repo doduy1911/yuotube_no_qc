@@ -62,12 +62,12 @@
 
 **Interfaces:** searchVideos(query, pageToken?): Promise<SearchPage>; SearchPage và VideoSummary theo spec.
 
-- [ ] Viết test ánh xạ kết quả, thời lượng ISO 8601, phân trang và lỗi key/quota/mạng.
-- [ ] Gọi search.list với 20 video/trang; gọi videos.list theo lô bổ sung thời lượng. Chuyển lỗi API thành code/message chuẩn.
-- [ ] Xây màn hình tìm kiếm, danh sách kết quả, loading/empty/error và tải thêm.
-- [ ] Gửi truy vấn khi submit; dùng request generation để bỏ phản hồi truy vấn cũ; khóa tải trùng trang.
-- [ ] Test truy vấn A phản hồi sau B không ghi đè B; thử API thực với truy vấn nhỏ, không lặp hàng loạt gây hao quota.
-- [ ] Kiểm tra chạm kết quả mở đúng video; thiếu key vẫn dùng dán link được.
+- [x] Viết test ánh xạ kết quả, thời lượng ISO 8601, phân trang, dedupe và thông báo lỗi key/quota/mạng.
+- [x] Gọi search.list với 20 video/trang; gọi videos.list theo lô bổ sung thời lượng. Chuyển lỗi API thành code/message chuẩn.
+- [x] Xây màn hình tìm kiếm, danh sách kết quả, loading/empty/error và tải thêm.
+- [x] Gửi truy vấn khi submit; dùng request generation để bỏ phản hồi truy vấn cũ; khóa tải trùng trang.
+- [x] Test truy vấn A phản hồi sau B không ghi đè B; thử API thực với truy vấn `lofi music`; cuộn để lấy trang kế.
+- [x] Chạm kết quả mở đúng video trên emulator. Luồng dán link vẫn gọi player trực tiếp trước khi cần API key.
 - [ ] Commit `feat: add Google YouTube search and pagination`.
 
 ## Task 4 — Player đầy đủ, nghe nền và PiP

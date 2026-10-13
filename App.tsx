@@ -1,5 +1,9 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Keyboard,
   Alert,
   Pressable,
   StatusBar,
@@ -13,22 +17,80 @@ import {
   SafeAreaView,
 } from 'react-native-safe-area-context';
 import NativeVideoExtractor from './src/native/specs/NativeVideoExtractor';
-import {openYouTubeLink} from './src/domain/youtubePlayback';
+import {parseYouTubeVideoId} from './src/domain/youtubeUrl';
+import {searchYouTube} from './src/native/YouTubeSearch';
+import {
+  getSearchErrorMessage,
+  mergeUniqueVideos,
+  type SearchPage,
+  type VideoSummary,
+} from './src/domain/youtubeSearch';
 
 function App() {
-  const [link, setLink] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<VideoSummary[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const generation = useRef(0);
+  const loadingMore = useRef(false);
 
-  async function openLink() {
+  async function openVideo(videoId: string) {
     try {
-      await openYouTubeLink(link, NativeVideoExtractor.openVideo);
+      await NativeVideoExtractor.openVideo(videoId, '');
+    } catch {
+      Alert.alert('Chưa mở được video', 'Không lấy được nguồn phát. Bạn thử lại sau nhé.');
+    }
+  }
+
+  async function submitQuery() {
+    Keyboard.dismiss();
+    const videoId = parseYouTubeVideoId(query);
+    if (videoId) {
+      await openVideo(videoId);
+      return;
+    }
+    if (!query.trim()) return;
+
+    const request = ++generation.current;
+    loadingMore.current = false;
+    setIsSearching(true);
+    setIsLoadingMore(false);
+    setSearchError('');
+    setResults([]);
+    setNextPageToken(null);
+    try {
+      const page = await searchYouTube(query.trim());
+      if (request !== generation.current) return;
+      setResults(page.items);
+      setNextPageToken(page.nextPageToken);
     } catch (error) {
-      const isInvalidLink = error instanceof Error && error.message === 'INVALID_URL';
-      Alert.alert(
-        isInvalidLink ? 'Link chưa hợp lệ' : 'Chưa mở được video',
-        isInvalidLink
-          ? 'Dán link video YouTube vào ô tìm kiếm để mở.'
-          : 'Không lấy được nguồn phát. Bạn thử lại sau nhé.',
-      );
+      if (request !== generation.current) return;
+      setSearchError(getSearchErrorMessage(error));
+    } finally {
+      if (request === generation.current) setIsSearching(false);
+    }
+  }
+
+  async function loadNextPage() {
+    if (!nextPageToken || loadingMore.current || isSearching) return;
+    const request = generation.current;
+    const token = nextPageToken;
+    loadingMore.current = true;
+    setIsLoadingMore(true);
+    try {
+      const page: SearchPage = await searchYouTube(query.trim(), token);
+      if (request !== generation.current) return;
+      setResults(current => mergeUniqueVideos(current, page.items));
+      setNextPageToken(page.nextPageToken);
+    } catch (error) {
+      if (request === generation.current) setSearchError(getSearchErrorMessage(error));
+    } finally {
+      if (request === generation.current) {
+        loadingMore.current = false;
+        setIsLoadingMore(false);
+      }
     }
   }
 
@@ -55,32 +117,78 @@ function App() {
               testID="search-input"
               accessibilityLabel="Tìm kiếm video trên YouTube"
               style={styles.searchInput}
-              placeholder="Dán link YouTube để xem video"
-              value={link}
-              onChangeText={setLink}
-              onSubmitEditing={openLink}
+              placeholder="Tìm video hoặc dán link YouTube"
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={submitQuery}
               placeholderTextColor="#8b8b8b"
               returnKeyType="search"
               selectionColor="#ff453a"
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Mở video"
-              onPress={openLink}
+              accessibilityLabel="Tìm kiếm hoặc mở video"
+              onPress={submitQuery}
               style={styles.openButton}>
-              <Text style={styles.openButtonLabel}>Mở</Text>
+              <Text style={styles.openButtonLabel}>
+                {parseYouTubeVideoId(query) ? 'Mở' : 'Tìm'}
+              </Text>
             </Pressable>
           </View>
 
-          <View testID="home-empty-state" style={styles.emptyState}>
+          {isSearching && results.length === 0 ? (
+            <View style={styles.statusState}>
+              <ActivityIndicator color="#ff453a" />
+              <Text style={styles.statusText}>Đang tìm video…</Text>
+            </View>
+          ) : null}
+
+          {searchError ? (
+            <Text accessibilityRole="alert" style={styles.errorText}>
+              {searchError}
+            </Text>
+          ) : null}
+
+          {results.length > 0 ? (
+            <FlatList
+              testID="search-results"
+              data={results}
+              keyExtractor={item => item.videoId}
+              renderItem={({item}) => (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => openVideo(item.videoId)}
+                  style={styles.resultRow}>
+                  {item.thumbnailUrl ? (
+                    <Image source={{uri: item.thumbnailUrl}} style={styles.thumbnail} />
+                  ) : <View style={styles.thumbnailFallback} />}
+                  <View style={styles.resultCopy}>
+                    <Text numberOfLines={2} style={styles.resultTitle}>{item.title}</Text>
+                    <Text numberOfLines={1} style={styles.resultMeta}>{item.channelTitle}</Text>
+                  </View>
+                </Pressable>
+              )}
+              onEndReached={loadNextPage}
+              onEndReachedThreshold={0.6}
+              ListFooterComponent={isLoadingMore ? (
+                <ActivityIndicator style={styles.listSpinner} color="#ff453a" />
+              ) : undefined}
+            />
+          ) : null}
+
+          {!isSearching && results.length === 0 && !searchError ? <View testID="home-empty-state" style={styles.emptyState}>
             <View style={styles.emptyIconRing}>
               <View style={styles.emptyPlayTriangle} />
             </View>
-            <Text style={styles.emptyTitle}>Video bạn muốn xem</Text>
-            <Text style={styles.emptyDescription}>
-              Tìm kiếm một chủ đề hoặc dán liên kết video để bắt đầu.
+            <Text style={styles.emptyTitle}>
+              {query.trim() ? 'Không tìm thấy video' : 'Video bạn muốn xem'}
             </Text>
-          </View>
+            <Text style={styles.emptyDescription}>
+              {query.trim()
+                ? 'Thử từ khóa khác hoặc dán link YouTube.'
+                : 'Tìm kiếm một chủ đề hoặc dán liên kết video để bắt đầu.'}
+            </Text>
+          </View> : null}
         </View>
 
         <View style={styles.bottomBar}>
@@ -193,6 +301,59 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+  },
+  statusState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  statusText: {
+    color: '#a6a6a6',
+    fontSize: 14,
+  },
+  errorText: {
+    marginTop: 20,
+    color: '#ff8a82',
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#282828',
+  },
+  thumbnail: {
+    width: 120,
+    height: 68,
+    borderRadius: 8,
+    backgroundColor: '#191919',
+  },
+  thumbnailFallback: {
+    width: 120,
+    height: 68,
+    borderRadius: 8,
+    backgroundColor: '#191919',
+  },
+  resultCopy: {
+    flex: 1,
+    gap: 6,
+  },
+  resultTitle: {
+    color: '#f7f7f7',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  resultMeta: {
+    color: '#999999',
+    fontSize: 12,
+  },
+  listSpinner: {
+    paddingVertical: 16,
   },
   emptyState: {
     flex: 1,

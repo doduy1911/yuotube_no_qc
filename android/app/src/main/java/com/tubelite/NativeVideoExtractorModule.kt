@@ -42,6 +42,19 @@ class NativeVideoExtractorModule(
     }
   }
 
+  @ReactMethod
+  fun searchVideos(query: String, pageToken: String, promise: Promise) {
+    executor.execute {
+      try {
+        promise.resolve(YouTubeSearchRepository.search(query, pageToken).toString())
+      } catch (error: YouTubeSearchException) {
+        promise.reject(error.code, error.message, error)
+      } catch (error: Throwable) {
+        promise.reject("API_NETWORK_ERROR", error.message ?: "Không kết nối được YouTube API.", error)
+      }
+    }
+  }
+
   companion object {
     const val NAME = "NativeVideoExtractor"
   }
