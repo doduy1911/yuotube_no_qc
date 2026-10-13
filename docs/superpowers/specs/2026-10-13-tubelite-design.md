@@ -28,7 +28,7 @@ App Android React Native dùng cá nhân, cài bằng APK, giao diện quen thu�
 
 ### Giao diện
 
-React Native quản lý màn hình và điều khiển. Module Kotlin kết nối qua Turbo Native Module với khai báo TypeScript và Codegen. Khung hình ExoPlayer hiển thị bằng Fabric native component; không tạo trình phát thứ hai khi chuyển màn hình hoặc PiP.
+React Native quản lý giao diện chính. Kotlin Native Module kết nối qua `NativeModules` với khai báo TypeScript. Màn phát native dùng MediaController nối tới Media3 service và PlayerView; không tạo trình phát thứ hai khi chuyển màn hình hoặc PiP.
 
 ### Tìm kiếm
 

@@ -9,6 +9,14 @@
     "start": "react-native start",
     "test": "jest"
   },
+  "codegenConfig": {
+    "name": "NativeVideoExtractorSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/native/specs",
+    "android": {
+      "javaPackageName": "com.tubelite"
+    }
+  },
   "dependencies": {
     "react": "19.2.3",
     "react-native": "0.87.0",

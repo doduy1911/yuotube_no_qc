@@ -1,5 +1,7 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {
+  Alert,
+  Pressable,
   StatusBar,
   StyleSheet,
   Text,
@@ -10,8 +12,26 @@ import {
   SafeAreaProvider,
   SafeAreaView,
 } from 'react-native-safe-area-context';
+import NativeVideoExtractor from './src/native/specs/NativeVideoExtractor';
+import {openYouTubeLink} from './src/domain/youtubePlayback';
 
 function App() {
+  const [link, setLink] = useState('');
+
+  async function openLink() {
+    try {
+      await openYouTubeLink(link, NativeVideoExtractor.openVideo);
+    } catch (error) {
+      const isInvalidLink = error instanceof Error && error.message === 'INVALID_URL';
+      Alert.alert(
+        isInvalidLink ? 'Link chưa hợp lệ' : 'Chưa mở được video',
+        isInvalidLink
+          ? 'Dán link video YouTube vào ô tìm kiếm để mở.'
+          : 'Không lấy được nguồn phát. Bạn thử lại sau nhé.',
+      );
+    }
+  }
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" />
@@ -35,11 +55,21 @@ function App() {
               testID="search-input"
               accessibilityLabel="Tìm kiếm video trên YouTube"
               style={styles.searchInput}
-              placeholder="Tìm kiếm video trên YouTube"
+              placeholder="Dán link YouTube để xem video"
+              value={link}
+              onChangeText={setLink}
+              onSubmitEditing={openLink}
               placeholderTextColor="#8b8b8b"
               returnKeyType="search"
               selectionColor="#ff453a"
             />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Mở video"
+              onPress={openLink}
+              style={styles.openButton}>
+              <Text style={styles.openButtonLabel}>Mở</Text>
+            </Pressable>
           </View>
 
           <View testID="home-empty-state" style={styles.emptyState}>
@@ -149,6 +179,20 @@ const styles = StyleSheet.create({
     color: '#f7f7f7',
     fontSize: 14,
     paddingVertical: 0,
+  },
+  openButton: {
+    minWidth: 44,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    backgroundColor: '#ff453a',
+    paddingHorizontal: 11,
+  },
+  openButtonLabel: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyState: {
     flex: 1,

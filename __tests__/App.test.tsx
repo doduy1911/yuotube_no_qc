@@ -9,6 +9,13 @@ import App from '../App';
 jest.mock('react-native-safe-area-context', () =>
   require('react-native-safe-area-context/jest/mock').default,
 );
+jest.mock('../src/native/specs/NativeVideoExtractor', () => ({
+  __esModule: true,
+  default: {
+    getVideoDetails: jest.fn(),
+    openVideo: jest.fn().mockResolvedValue(true),
+  },
+}));
 
 test('renders correctly', async () => {
   let app: ReactTestRenderer.ReactTestRenderer;
@@ -21,6 +28,6 @@ test('renders correctly', async () => {
   );
   expect(
     app!.root.findByProps({ testID: 'search-input' }).props.placeholder,
-  ).toBe('Tìm kiếm video trên YouTube');
+  ).toBe('Dán link YouTube để xem video');
   expect(app!.root.findByProps({ testID: 'home-empty-state' })).toBeTruthy();
 });

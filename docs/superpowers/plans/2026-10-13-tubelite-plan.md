@@ -4,7 +4,7 @@
 
 **Goal:** Xây APK Android React Native tìm kiếm YouTube, phát riêng, nghe nền và PiP cho sử dụng cá nhân.
 
-**Architecture:** React Native TypeScript cho giao diện; Turbo Native Module Kotlin cho Google Search, NewPipe Extractor và lưu trữ. Media3 trong MediaSessionService giữ một player duy nhất; Fabric component hiển thị video.
+**Architecture:** React Native TypeScript cho giao diện; Native Module Kotlin cho Google Search, NewPipe Extractor và lưu trữ. Media3 trong MediaSessionService giữ một player duy nhất; PlayerView native hiển thị video trong Activity.
 
 **Tech Stack:** React Native Community CLI, TypeScript, Kotlin, Media3 ExoPlayer, NewPipe Extractor, Room, Gradle.
 
@@ -51,10 +51,10 @@
 **Interfaces:** VideoSummary, VideoDetails, getVideo(videoId), load(videoId, startPositionMs?), play, pause, seekTo, stop và playbackState theo spec.
 
 - [x] Viết kiểm tra chuẩn hóa watch/youtu.be/shorts URL, link sai và domain giả; chạy thấy lỗi trước khi hiện thực.
-- [ ] Tích hợp NewPipe Extractor, downloader, desugaring và lỗi typed trên background dispatcher.
-- [ ] Tạo MediaSessionService/ExoPlayer và Fabric video view, kết nối qua MediaController.
-- [ ] Triển khai dán link → video ID → lấy nguồn → phát; hỗ trợ progressive và hình/tiếng tách riêng.
-- [ ] Kiểm tra trên emulator-5554 với video công khai: có hình, tiếng, tua được; ghi ID mẫu và kết quả, không ghi URL có token.
+- [x] Tích hợp NewPipe Extractor, downloader, desugaring và trả lỗi qua Promise trên background executor.
+- [x] Tạo MediaSessionService/ExoPlayer và PlayerView native, kết nối qua MediaController.
+- [x] Triển khai dán link → video ID → lấy progressive stream → phát. Luồng hình/tiếng tách riêng được để lại cho Task 4.
+- [x] Kiểm tra trên emulator-5554 với video công khai `dQw4w9WgXcQ`: có hình, playback position tăng, nút tạm dừng đổi MediaSession sang PAUSED; không lưu URL có token.
 - [ ] Nếu extractor lỗi, xác định nguyên nhân và sửa trước khi chuyển sang giao diện đầy đủ; không thay bằng dữ liệu giả rồi coi là thành công.
 - [ ] Commit `feat: play YouTube videos through native extraction and Media3`.
 
