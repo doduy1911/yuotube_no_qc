@@ -32,7 +32,7 @@ internal object NewPipeVideoRepository {
 
   fun getVideoDetails(videoId: String): JSONObject {
     val info = fetchInfo(videoId)
-    val streams = playableCombinedStreams(info)
+    val streams = playableStreams(info)
     val qualities = JSONArray()
 
     streams.forEach { stream ->
@@ -40,7 +40,7 @@ internal object NewPipeVideoRepository {
       qualities.put(
         JSONObject()
           .put("id", stream.id)
-          .put("label", stream.resolution)
+          .put("label", if (stream.audioUrl == null) stream.resolution else "${stream.resolution} · âm thanh riêng")
           .put("height", height ?: JSONObject.NULL),
       )
     }
@@ -51,27 +51,59 @@ internal object NewPipeVideoRepository {
       .put("channelTitle", info.uploaderName)
       .put("durationMs", info.duration * 1000)
       .put("thumbnailUrl", info.thumbnails.firstOrNull()?.url ?: JSONObject.NULL)
+      .put("defaultQualityId", chooseDefaultStream(streams)?.id ?: JSONObject.NULL)
       .put("qualities", qualities)
   }
 
-  fun openVideo(videoId: String, qualityId: String): Pair<String, String> {
+  fun resolveVideo(videoId: String, qualityId: String = ""): ResolvedVideoStream {
     val info = fetchInfo(videoId)
-    val streams = playableCombinedStreams(info)
+    val streams = playableStreams(info)
     val selected = streams.firstOrNull { it.id == qualityId } ?: chooseDefaultStream(streams)
       ?: throw IllegalStateException("No playable combined stream is available")
-    return selected.content to info.name
+    return ResolvedVideoStream(selected.videoUrl, info.name, selected.id, selected.audioUrl)
   }
 
-  private fun playableCombinedStreams(info: StreamInfo): List<VideoStream> =
-    info.videoStreams.filter { !it.isVideoOnly && it.isUrl && it.content.startsWith("https://") }
+  private fun playableStreams(info: StreamInfo): List<PlayableVideoStream> {
+    val audioUrl = info.audioStreams
+      .filter { it.isUrl && it.content.startsWith("https://") }
+      .maxByOrNull { it.averageBitrate }
+      ?.content
 
-  private fun chooseDefaultStream(streams: List<VideoStream>): VideoStream? {
-    val withHeights = streams.mapNotNull { stream ->
+    val combined = info.videoStreams
+      .filter { !it.isVideoOnly() && it.isUrl && it.content.startsWith("https://") }
+      .sortedByDescending { it.getBitrate() }
+      .distinctBy { it.getResolution() }
+      .map { PlayableVideoStream(it.id, it.getResolution(), it.content, null) }
+
+    val adaptive = if (audioUrl == null) emptyList() else info.videoOnlyStreams
+      .filter { it.isUrl && it.content.startsWith("https://") }
+      .sortedByDescending { it.getBitrate() }
+      .distinctBy { it.getResolution() }
+      .map { PlayableVideoStream(it.id, it.getResolution(), it.content, audioUrl) }
+
+    return combined + adaptive
+  }
+
+  private fun chooseDefaultStream(streams: List<PlayableVideoStream>): PlayableVideoStream? {
+    val qualities = streams.map { stream ->
       val height = Regex("(\\d+)p").find(stream.resolution)?.groupValues?.get(1)?.toIntOrNull()
-      height?.let { stream to it }
+      PlaybackQuality(stream.id, height)
     }
-    return withHeights.filter { it.second <= 720 }.maxByOrNull { it.second }?.first
-      ?: withHeights.minByOrNull { it.second }?.first
-      ?: streams.firstOrNull()
+    val selectedId = PlaybackPolicy.chooseDefaultQuality(qualities)?.id ?: return null
+    return streams.firstOrNull { it.id == selectedId }
   }
 }
+
+private data class PlayableVideoStream(
+  val id: String,
+  val resolution: String,
+  val videoUrl: String,
+  val audioUrl: String?,
+)
+
+internal data class ResolvedVideoStream(
+  val videoUrl: String,
+  val title: String,
+  val qualityId: String,
+  val audioUrl: String?,
+)

@@ -68,20 +68,20 @@
 - [x] Gửi truy vấn khi submit; dùng request generation để bỏ phản hồi truy vấn cũ; khóa tải trùng trang.
 - [x] Test truy vấn A phản hồi sau B không ghi đè B; thử API thực với truy vấn `lofi music`; cuộn để lấy trang kế.
 - [x] Chạm kết quả mở đúng video trên emulator. Luồng dán link vẫn gọi player trực tiếp trước khi cần API key.
-- [ ] Commit `feat: add Google YouTube search and pagination`.
+- [x] Commit `feat: add Google YouTube search and pagination`.
 
 ## Task 4 — Player đầy đủ, nghe nền và PiP
 
-**Interfaces:** bổ sung setQuality(qualityId), enterPip(); sự kiện playbackState đầy đủ.
+**Interfaces:** Media3 PlayerView điều khiển phát, tua và chọn chất lượng; Activity chuyển PiP; MediaSessionService giữ playback state.
 
-- [ ] Viết kiểm tra chọn chất lượng mặc định, giữ vị trí khi đổi nguồn và chỉ phục hồi nguồn hết hạn một lần.
-- [ ] Xây điều khiển React Native: phát/dừng, tua, chất lượng, toàn màn hình và trạng thái buffering/lỗi.
-- [ ] Chọn mặc định cao nhất không quá 720p, nếu không có thì chất lượng thấp nhất; chỉ hiển thị nguồn dùng được.
-- [ ] Khi nguồn hết hạn, resolve lại trong native và tiếp tục tại vị trí cũ một lần; thất bại hiện thử lại thủ công.
-- [ ] Cấu hình foreground service, media notification, quyền Android và audio focus; pause khi ngắt tai nghe.
-- [ ] Triển khai PiP theo cùng media session, tỷ lệ khung hình của video; thoát PiP về UI giữ trạng thái.
-- [ ] Kiểm tra trên máy ảo: Home, khóa màn hình, xoay, PiP, điều khiển notification và quay lại app không tạo player thứ hai.
-- [ ] Ghi phần cần thiết bị thật, đặc biệt hành vi tai nghe/audio focus nếu máy ảo không mô phỏng đầy đủ.
+- [x] Viết unit test chọn chất lượng mặc định và giới hạn thử lại nguồn; xác nhận trên emulator đổi chất lượng giữ vị trí phát.
+- [x] Xây điều khiển Media3 PlayerView: phát/dừng, tua, chất lượng, cùng trạng thái buffering/lỗi.
+- [x] Chọn mặc định cao nhất không quá 720p, nếu không có thì chất lượng thấp nhất; lọc URL không dùng được và ghép track hình/tiếng adaptive.
+- [x] Khi HTTP source lỗi, resolve lại trong native và tiếp tục tại vị trí cũ một lần; nếu không khôi phục được, báo mở lại video. Force-expiry chưa mô phỏng trên emulator.
+- [x] Cấu hình foreground service, media notification, quyền Android và audio focus; bật pause khi rút tai nghe qua Media3.
+- [x] Triển khai PiP trên cùng media session; cập nhật tỷ lệ theo video; khi Home thì PiP tiếp tục video, notification vẫn có điều khiển media.
+- [ ] Kiểm tra thêm trên máy ảo: khóa màn hình, xoay và quay lại từ PiP không tạo player thứ hai.
+- [x] Ghi giới hạn thiết bị: audio focus khi rút tai nghe chưa xác minh bằng thiết bị thật.
 - [ ] Commit `feat: add playback controls background audio and picture in picture`.
 
 ## Task 5 — Lịch sử và yêu thích

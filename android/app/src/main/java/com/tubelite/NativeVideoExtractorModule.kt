@@ -29,9 +29,9 @@ class NativeVideoExtractorModule(
   fun openVideo(videoId: String, qualityId: String, promise: Promise) {
     executor.execute {
       try {
-        val (streamUrl, title) = NewPipeVideoRepository.openVideo(videoId, qualityId)
+        val resolved = NewPipeVideoRepository.resolveVideo(videoId, qualityId)
         val context = reactApplicationContext
-        PlaybackService.start(context, streamUrl, title)
+        PlaybackService.start(context, resolved, videoId)
         context.startActivity(
           Intent(context, PlaybackActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
