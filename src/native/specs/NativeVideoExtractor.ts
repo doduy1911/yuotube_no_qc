@@ -9,6 +9,7 @@ export interface Spec {
   clearHistory(): Promise<boolean>;
   getTrendingMusic(section: 'vn' | 'international', forceRefresh: boolean): Promise<string>;
   getSearchSuggestions(query: string): Promise<string>;
+  getRecommendations(videoId: string): Promise<string>;
 }
 
 export default NativeModules.NativeVideoExtractor as Spec;

@@ -30,6 +30,8 @@ internal object NewPipeVideoRepository {
     return StreamInfo.getInfo(service, "https://www.youtube.com/watch?v=$videoId")
   }
 
+  internal fun getStreamInfo(videoId: String): StreamInfo = fetchInfo(videoId)
+
   fun getVideoDetails(videoId: String): JSONObject {
     val info = fetchInfo(videoId)
     val streams = playableStreams(info)

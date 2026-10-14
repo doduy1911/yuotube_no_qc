@@ -12,8 +12,12 @@ class NativeVideoExtractorModule(
 ) : ReactContextBaseJavaModule(reactContext) {
   private val executor = Executors.newSingleThreadExecutor()
   private val suggestionExecutor = Executors.newSingleThreadExecutor()
+  private val recommendationExecutor = Executors.newSingleThreadExecutor()
   private val trendingRepository by lazy {
     TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(reactApplicationContext))
+  }
+  private val recommendationRepository by lazy {
+    RecommendationRepository(NewPipeRelatedVideoSource(), CachedTrendingRecommendationSource(trendingRepository))
   }
 
   override fun getName() = NAME
@@ -80,6 +84,15 @@ class NativeVideoExtractorModule(
       runCatching { org.json.JSONArray(SearchSuggestionRepository.suggest(query)).toString() }
         .onSuccess { promise.resolve(it) }
         .onFailure { promise.reject("SUGGESTION_FAILED", "Không tải được gợi ý tìm kiếm.", it) }
+    }
+  }
+
+  @ReactMethod
+  fun getRecommendations(videoId: String, promise: Promise) {
+    recommendationExecutor.execute {
+      runCatching { recommendationRepository.get(videoId).toJson().toString() }
+        .onSuccess { promise.resolve(it) }
+        .onFailure { promise.reject("RECOMMENDATIONS_FAILED", "Không tải được bài gợi ý.", it) }
     }
   }
 
