@@ -13,7 +13,7 @@ internal object NewPipeVideoRepository {
   private val lock = Any()
   @Volatile private var initialized = false
 
-  private fun initialize() {
+  internal fun initialize() {
     if (initialized) return
     synchronized(lock) {
       if (!initialized) {

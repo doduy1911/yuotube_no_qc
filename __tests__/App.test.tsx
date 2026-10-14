@@ -30,6 +30,9 @@ jest.mock('../src/native/YouTubeSearch', () => ({
 jest.mock('../src/native/MusicDiscovery', () => ({
   getTrendingMusic: jest.fn().mockResolvedValue({section: 'vn', items: [], regions: ['VN'], updatedAt: 1, stale: false}),
 }));
+jest.mock('../src/native/SearchSuggestions', () => ({
+  getSearchSuggestions: jest.fn().mockResolvedValue([]),
+}));
 
 test('renders correctly', async () => {
   let app: ReactTestRenderer.ReactTestRenderer;
@@ -123,6 +126,33 @@ test('a late response from an older query cannot replace newer results', async (
 
   expect(app!.root.findByProps({children: 'Second query result'})).toBeTruthy();
   expect(app!.root.findAllByProps({children: 'First query result'})).toHaveLength(0);
+});
+
+test('does not show no-results state before a search is submitted', async () => {
+  mockSearchYouTube.mockReset().mockResolvedValue({items: [], nextPageToken: null});
+  let app: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await ReactTestRenderer.act(async () => {
+    app!.root.findByProps({testID: 'search-input'}).props.onChangeText('em cua');
+    await Promise.resolve();
+  });
+  const emptyStateBeforeSubmit = app!.root.findAllByProps({testID: 'home-empty-state'}).length;
+  expect(mockSearchYouTube).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(async () => {
+    await app!.root.findByProps({testID: 'search-input'}).props.onSubmitEditing();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const emptyStateAfterSubmit = app!.root.findAllByProps({testID: 'home-empty-state'}).length;
+  await ReactTestRenderer.act(async () => { app!.unmount(); });
+  expect(emptyStateBeforeSubmit).toBe(0);
+  expect(emptyStateAfterSubmit).toBeGreaterThan(0);
+  expect(mockSearchYouTube).toHaveBeenCalledTimes(1);
+  expect(mockSearchYouTube).toHaveBeenCalledWith('em cua');
 });
 
 test('opens the library and renders persisted history and favorites', async () => {

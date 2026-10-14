@@ -8,6 +8,7 @@ export interface Spec {
   setFavorite(videoId: string, enabled: boolean): Promise<boolean>;
   clearHistory(): Promise<boolean>;
   getTrendingMusic(section: 'vn' | 'international', forceRefresh: boolean): Promise<string>;
+  getSearchSuggestions(query: string): Promise<string>;
 }
 
 export default NativeModules.NativeVideoExtractor as Spec;

@@ -9,7 +9,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import {
@@ -20,6 +19,7 @@ import NativeVideoExtractor from './src/native/specs/NativeVideoExtractor';
 import {parseYouTubeVideoId} from './src/domain/youtubeUrl';
 import {searchYouTube} from './src/native/YouTubeSearch';
 import HomeScreen from './src/features/home/HomeScreen';
+import SearchBox from './src/features/search/SearchBox';
 import {
   getSearchErrorMessage,
   mergeUniqueVideos,
@@ -32,6 +32,7 @@ function App() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<VideoSummary[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
@@ -71,14 +72,30 @@ function App() {
     }
   }
 
-  async function submitQuery() {
+  function handleQueryChange(value: string) {
+    if (value !== query) {
+      generation.current++;
+      loadingMore.current = false;
+      setIsSearching(false);
+      setIsLoadingMore(false);
+      setResults([]);
+      setNextPageToken(null);
+      setSearchError('');
+      setHasSearched(false);
+    }
+    setQuery(value);
+  }
+
+  async function submitQuery(submittedQuery = query) {
     Keyboard.dismiss();
-    const videoId = parseYouTubeVideoId(query);
+    const normalizedQuery = submittedQuery.trim();
+    const videoId = parseYouTubeVideoId(normalizedQuery);
     if (videoId) {
       await openVideo(videoId);
       return;
     }
-    if (!query.trim()) return;
+    if (!normalizedQuery) return;
+    setHasSearched(true);
 
     const request = ++generation.current;
     loadingMore.current = false;
@@ -88,7 +105,7 @@ function App() {
     setResults([]);
     setNextPageToken(null);
     try {
-      const page = await searchYouTube(query.trim());
+      const page = await searchYouTube(normalizedQuery);
       if (request !== generation.current) return;
       setResults(page.items);
       setNextPageToken(page.nextPageToken);
@@ -162,30 +179,7 @@ function App() {
             />
           </> : <>
           <Text style={styles.sectionTitle}>Khám phá video</Text>
-          <View style={styles.searchBox}>
-            <Text style={styles.searchIcon}>⌕</Text>
-            <TextInput
-              testID="search-input"
-              accessibilityLabel="Tìm kiếm video trên YouTube"
-              style={styles.searchInput}
-              placeholder="Tìm video hoặc dán link YouTube"
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={submitQuery}
-              placeholderTextColor="#8b8b8b"
-              returnKeyType="search"
-              selectionColor="#ff453a"
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Tìm kiếm hoặc mở video"
-              onPress={submitQuery}
-              style={styles.openButton}>
-              <Text style={styles.openButtonLabel}>
-                {parseYouTubeVideoId(query) ? 'Mở' : 'Tìm'}
-              </Text>
-            </Pressable>
-          </View>
+          <SearchBox value={query} onChangeText={handleQueryChange} onSubmit={submitQuery} />
 
           {isSearching && results.length === 0 ? (
             <View style={styles.statusState}>
@@ -228,7 +222,7 @@ function App() {
           ) : null}
 
           {!isSearching && results.length === 0 && !searchError && !query.trim() ? <HomeScreen onSelectVideo={video => openVideo(video.videoId)} recentVideos={history} /> : null}
-          {!isSearching && results.length === 0 && !searchError && query.trim() ? <View testID="home-empty-state" style={styles.emptyState}>
+          {!isSearching && hasSearched && results.length === 0 && !searchError && query.trim() ? <View testID="home-empty-state" style={styles.emptyState}>
             <View style={styles.emptyIconRing}>
               <View style={styles.emptyPlayTriangle} />
             </View>
@@ -318,42 +312,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.4,
     marginBottom: 18,
-  },
-  searchBox: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#343434',
-    backgroundColor: '#191919',
-  },
-  searchIcon: {
-    color: '#a6a6a6',
-    fontSize: 27,
-    lineHeight: 30,
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    color: '#f7f7f7',
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  openButton: {
-    minWidth: 44,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    backgroundColor: '#ff453a',
-    paddingHorizontal: 11,
-  },
-  openButtonLabel: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   statusState: {
     flex: 1,

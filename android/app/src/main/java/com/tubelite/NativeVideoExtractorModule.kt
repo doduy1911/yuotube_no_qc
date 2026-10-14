@@ -11,6 +11,7 @@ class NativeVideoExtractorModule(
   reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
   private val executor = Executors.newSingleThreadExecutor()
+  private val suggestionExecutor = Executors.newSingleThreadExecutor()
   private val trendingRepository by lazy {
     TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(reactApplicationContext))
   }
@@ -70,6 +71,15 @@ class NativeVideoExtractorModule(
           if (error is YouTubeSearchException) promise.reject(error.code, error.message, error)
           else promise.reject("API_NETWORK_ERROR", error.message ?: "Không tải được nhạc thịnh hành.", error)
         }
+    }
+  }
+
+  @ReactMethod
+  fun getSearchSuggestions(query: String, promise: Promise) {
+    suggestionExecutor.execute {
+      runCatching { org.json.JSONArray(SearchSuggestionRepository.suggest(query)).toString() }
+        .onSuccess { promise.resolve(it) }
+        .onFailure { promise.reject("SUGGESTION_FAILED", "Không tải được gợi ý tìm kiếm.", it) }
     }
   }
 
