@@ -21,6 +21,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import androidx.media3.session.SessionCommand
 import androidx.media3.ui.PlayerView
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.Executors
@@ -34,6 +35,7 @@ class PlaybackActivity : Activity() {
   private lateinit var titleView: TextView
   private lateinit var channelView: TextView
   private lateinit var favoriteButton: TextView
+  private lateinit var autoplayButton: TextView
   private lateinit var recommendationsList: LinearLayout
   private lateinit var recommendationsHeading: TextView
   private lateinit var recommendationsStatus: TextView
@@ -51,6 +53,13 @@ class PlaybackActivity : Activity() {
     override fun onPlaybackStateChanged(playbackState: Int) = updatePlaybackStatus()
     override fun onIsPlayingChanged(isPlaying: Boolean) = updatePlaybackStatus()
   }
+  private val sessionListener = object : MediaController.Listener {
+    override fun onExtrasChanged(controller: MediaController, extras: android.os.Bundle) = renderSnapshot(extras)
+    override fun onCustomCommand(controller: MediaController, command: SessionCommand, args: android.os.Bundle): com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.SessionResult> {
+      renderSnapshot(args)
+      return com.google.common.util.concurrent.Futures.immediateFuture(androidx.media3.session.SessionResult(androidx.media3.session.SessionResult.RESULT_SUCCESS))
+    }
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -59,9 +68,10 @@ class PlaybackActivity : Activity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     buildLayout()
     val token = SessionToken(this, android.content.ComponentName(this, PlaybackService::class.java))
-    val future = MediaController.Builder(this, token).buildAsync(); controllerFuture = future
+    val future = MediaController.Builder(this, token).setListener(sessionListener).buildAsync(); controllerFuture = future
     future.addListener({ if (!isDestroyed) runCatching { future.get() }.onSuccess { controller ->
       playerView.player = controller; controller.addListener(playerListener); refreshFromController()
+      requestScreenSnapshot(controller)
     } }, mainExecutor)
   }
 
@@ -80,11 +90,12 @@ class PlaybackActivity : Activity() {
     titleView = text(19f, Color.WHITE).apply { maxLines = 2 }
     channelView = text(14f, Color.LTGRAY).apply { setPadding(0, dp(4), 0, dp(8)) }
     favoriteButton = text(15f, Color.WHITE).apply { text = "♡  Yêu thích"; setPadding(dp(12), dp(8), dp(12), dp(8)); setOnClickListener { toggleFavorite() } }
+    autoplayButton = text(14f, Color.WHITE).apply { text = "Tự phát bài tiếp theo: Bật"; setPadding(dp(12), dp(8), dp(12), dp(8)); setOnClickListener { toggleAutoplay() } }
     recommendationsHeading = text(17f, Color.WHITE).apply { text = "Video liên quan"; setPadding(0, dp(14), 0, dp(6)) }
     recommendationsStatus = text(14f, Color.LTGRAY)
     recommendationsList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-    body.addView(titleView); body.addView(channelView); body.addView(favoriteButton); body.addView(recommendationsHeading); body.addView(recommendationsStatus); body.addView(recommendationsList)
+    body.addView(titleView); body.addView(channelView); body.addView(favoriteButton); body.addView(autoplayButton); body.addView(recommendationsHeading); body.addView(recommendationsStatus); body.addView(recommendationsList)
     detailsPanel.addView(ScrollView(this).apply { addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
     rootLayout.addView(detailsPanel, LinearLayout.LayoutParams(-1, 0, 0.4375f)); setContentView(rootLayout)
     applyOrientationLayout(resources.configuration)
@@ -112,19 +123,39 @@ class PlaybackActivity : Activity() {
     if (currentVideoId.isNotBlank()) channelView.text = listOf(player.mediaMetadata.artist?.toString().orEmpty(), state).filter(String::isNotBlank).joinToString(" · ")
   }
   private fun requestRecommendations(id: String) {
-    val req = requests.next(id); recommendationsList.removeAllViews(); recommendationsStatus.text = "Đang tải gợi ý…"
-    executor.execute {
-      val repo = RecommendationRepository(NewPipeRelatedVideoSource(), CachedTrendingRecommendationSource(TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(this))))
-      val result = runCatching { repo.get(id) }
-      runOnUiThread {
-        if (isDestroyed || !requests.isCurrent(req, id)) return@runOnUiThread
-        result.onSuccess { set ->
-          recommendationsHeading.text = if (set.source == "trending") "Khám phá thêm" else "Video liên quan"
-          recommendationsStatus.text = if (set.items.isEmpty()) set.error ?: "Chưa có video gợi ý." else ""
-          set.items.forEach(::addRecommendation)
-        }.onFailure { recommendationsStatus.text = "Không tải được gợi ý. Thử lại sau." }
+    requests.next(id); recommendationsList.removeAllViews(); recommendationsStatus.text = "Đang tải gợi ý…"
+    (playerView.player as? MediaController)?.let(::requestScreenSnapshot)
+  }
+  private fun requestScreenSnapshot(controller: MediaController) {
+    val future = controller.sendCustomCommand(SessionCommand(PlaybackService.ACTION_GET_PLAYBACK_SCREEN_STATE, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+    future.addListener({ if (!isDestroyed) runCatching { future.get().extras }.getOrNull()?.let(::renderSnapshot) }, mainExecutor)
+  }
+  private fun renderSnapshot(extras: android.os.Bundle) {
+    if (isDestroyed) return
+    val id = extras.getString("videoId").orEmpty()
+    autoplayButton.text = "Tự phát bài tiếp theo: ${if (extras.getBoolean("autoplayEnabled", true)) "Bật" else "Tắt"}"
+    if (id.isNotBlank() && id == currentVideoId && extras.getBoolean("autoplayTransition", false)) recommendationsStatus.text = "Đang chuyển sang bài tiếp theo…"
+    if (id != currentVideoId || id.isBlank()) return
+    if (extras.getBoolean("recommendationsLoading", false)) { recommendationsStatus.text = "Đang tải gợi ý…"; return }
+    val raw = extras.getString("recommendationsJson") ?: return
+    runCatching {
+      val json = org.json.JSONObject(raw)
+      if (json.optString("videoId") != id) return
+      val source = json.optString("source")
+      val items = json.optJSONArray("items") ?: org.json.JSONArray()
+      recommendationsHeading.text = if (source == "trending") "Khám phá thêm" else "Video liên quan"
+      recommendationsList.removeAllViews()
+      for (index in 0 until items.length()) {
+        val item = items.optJSONObject(index) ?: continue
+        addRecommendation(VideoSummary(item.optString("videoId"), item.optString("title"), item.optString("channelTitle"), item.optString("thumbnailUrl").takeUnless { it == "null" }, null, item.optLong("durationMs").takeIf { !item.isNull("durationMs") }))
       }
+      recommendationsStatus.text = if (items.length() == 0) json.optString("error").ifBlank { extras.getString("error") ?: "Chưa có video gợi ý." } else ""
     }
+  }
+  private fun toggleAutoplay() {
+    val controller = playerView.player as? MediaController ?: return
+    val enabled = !autoplayButton.text.toString().endsWith("Tắt")
+    controller.sendCustomCommand(SessionCommand(PlaybackService.ACTION_SET_AUTOPLAY, android.os.Bundle.EMPTY), android.os.Bundle().apply { putBoolean("enabled", enabled) })
   }
   private fun addRecommendation(item: VideoSummary) {
     val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(8)) }

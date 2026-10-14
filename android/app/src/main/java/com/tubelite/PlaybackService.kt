@@ -22,6 +22,8 @@ import android.os.Looper
 import android.widget.Toast
 import java.util.concurrent.Executors
 import com.google.common.util.concurrent.Futures
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 
 class PlaybackService : MediaSessionService() {
   private lateinit var player: ExoPlayer
@@ -32,6 +34,18 @@ class PlaybackService : MediaSessionService() {
   private val resolver = Executors.newSingleThreadExecutor()
   private val mainHandler = Handler(Looper.getMainLooper())
   private val storage = Executors.newSingleThreadExecutor()
+  private val recommendationsExecutor = Executors.newSingleThreadExecutor()
+  private lateinit var playbackSettings: PlaybackSettings
+  private lateinit var autoplayCoordinator: AutoplayCoordinator
+  private var recommendationIds: List<String> = emptyList()
+  private var recommendationsFor = ""
+  private var recommendationsLoading = false
+  private var recommendationError: String? = null
+  private var recommendationGeneration = 0L
+  private var waitingEndedVideoId: String? = null
+  private var autoplayToken: Long? = null
+  private var autoplayTransition = false
+  private var recommendationItems: List<VideoSummary> = emptyList()
   private var currentMetadata: VideoMetadata? = null
   private val selectGeneration = PlaybackRequestGeneration()
   private val saveProgress = object : Runnable {
@@ -43,6 +57,8 @@ class PlaybackService : MediaSessionService() {
 
   override fun onCreate() {
     super.onCreate()
+    playbackSettings = PlaybackSettings(this)
+    autoplayCoordinator = AutoplayCoordinator(playbackSettings.isAutoplayEnabled())
     player = ExoPlayer.Builder(this)
       .setAudioAttributes(AudioAttributes.DEFAULT, true)
       .setHandleAudioBecomingNoisy(true)
@@ -51,17 +67,25 @@ class PlaybackService : MediaSessionService() {
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         mainHandler.removeCallbacks(saveProgress)
         if (isPlaying) mainHandler.postDelayed(saveProgress, 5_000) else persistPosition()
+        publishPlaybackState()
       }
 
       override fun onPlaybackStateChanged(playbackState: Int) {
         if (playbackState == Player.STATE_ENDED) {
           val endedMetadata = currentMetadata
           if (endedMetadata != null) storage.execute { VideoHistoryStore.recordVideo(this@PlaybackService, endedMetadata, 0L) }
+          handleTrackEnded()
         }
+        publishPlaybackState()
       }
 
       override fun onPlayerError(error: PlaybackException) {
         if (!PlaybackPolicy.shouldRefreshSource(error.errorCode, refreshAttempted)) {
+          val failedAutoplayToken = autoplayToken
+          if (failedAutoplayToken != null) {
+            tryNextAutoplayCandidate(failedAutoplayToken)
+            return
+          }
           val message = if (refreshAttempted) {
             "Không khôi phục được nguồn phát. Hãy mở lại video để thử lại."
           } else {
@@ -122,6 +146,11 @@ class PlaybackService : MediaSessionService() {
               putString("channelTitle", currentMetadata?.channelTitle)
               putString("status", when { player.playbackState == Player.STATE_ENDED -> "ended"; player.isPlaying -> "playing"; player.playbackState == Player.STATE_BUFFERING -> "loading"; currentVideoId.isBlank() -> "idle"; else -> "paused" })
               putLong("positionMs", player.currentPosition.coerceAtLeast(0L))
+              putBoolean("autoplayEnabled", autoplayCoordinator.isEnabled())
+              putBoolean("recommendationsLoading", recommendationsLoading)
+              putBoolean("autoplayTransition", autoplayTransition)
+              putString("recommendationsJson", recommendationSetJson())
+              putString("error", recommendationError)
             }
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, state))
           }
@@ -129,7 +158,17 @@ class PlaybackService : MediaSessionService() {
             selectVideo(args.getString("videoId").orEmpty())
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
           }
-          ACTION_SET_AUTOPLAY -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+          ACTION_SET_AUTOPLAY -> {
+            val enabled = args.getBoolean("enabled", true)
+            autoplayCoordinator.setEnabled(enabled)
+            playbackSettings.setAutoplayEnabled(enabled)
+            autoplayToken = null
+            autoplayTransition = false
+            if (!enabled) waitingEndedVideoId = null
+            if (enabled && player.playbackState == Player.STATE_ENDED && currentVideoId.isNotBlank() && !recommendationsLoading) beginAutoplay(currentVideoId)
+            publishPlaybackState()
+            Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+          }
           else -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
       }
@@ -159,7 +198,7 @@ class PlaybackService : MediaSessionService() {
         )
         val position = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
         val shouldPlay = intent.getBooleanExtra(EXTRA_SHOULD_PLAY, true)
-        setStream(resolved, videoId, position, resetRetry = true, shouldPlay = shouldPlay)
+        setStream(resolved, videoId, position, resetRetry = true, shouldPlay = shouldPlay, manualSelection = intent.action == ACTION_PLAY)
       }
     }
     return super.onStartCommand(intent, flags, startId)
@@ -171,6 +210,7 @@ class PlaybackService : MediaSessionService() {
     mediaSession?.release()
     player.release()
     resolver.shutdownNow()
+    recommendationsExecutor.shutdownNow()
     storage.shutdown()
     super.onDestroy()
   }
@@ -181,6 +221,7 @@ class PlaybackService : MediaSessionService() {
     positionMs: Long,
     resetRetry: Boolean,
     shouldPlay: Boolean = true,
+    manualSelection: Boolean = false,
   ) {
     val previousMetadata = currentMetadata
     val previousId = currentVideoId
@@ -194,6 +235,17 @@ class PlaybackService : MediaSessionService() {
     val metadataSnapshot = resolved.metadata
     storage.execute { VideoHistoryStore.recordVideo(this, metadataSnapshot, positionMs) }
     if (resetRetry) refreshAttempted = false
+    if (manualSelection) autoplayCoordinator.manualSelection(videoId)
+    if (manualSelection || previousId != videoId) autoplayToken = null
+    autoplayTransition = false
+    if (recommendationsFor != videoId) {
+      recommendationIds = emptyList()
+      recommendationItems = emptyList()
+      recommendationError = null
+      recommendationsFor = ""
+      recommendationsLoading = false
+    }
+    loadRecommendations(videoId)
     val metadata = MediaMetadata.Builder()
       .setTitle(resolved.title)
       .setArtist(resolved.metadata.channelTitle)
@@ -221,6 +273,7 @@ class PlaybackService : MediaSessionService() {
     player.prepare()
     player.playWhenReady = shouldPlay
     if (shouldPlay) player.play() else player.pause()
+    publishPlaybackState()
   }
 
   private fun persistPosition() {
@@ -231,6 +284,13 @@ class PlaybackService : MediaSessionService() {
 
   private fun selectVideo(videoId: String) {
     val request = selectGeneration.next(videoId)
+    if (!videoId.matches(Regex("[A-Za-z0-9_-]{11}"))) return
+    autoplayCoordinator.manualSelection(videoId)
+    waitingEndedVideoId = null
+    autoplayToken = null
+    autoplayTransition = false
+    recommendationGeneration++
+    recommendationsFor = ""
     val previousId = currentVideoId
     val previousPosition = player.currentPosition
     val previousMetadata = currentMetadata
@@ -242,8 +302,131 @@ class PlaybackService : MediaSessionService() {
         .onSuccess { resolved -> mainHandler.post {
           if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, 0L, resetRetry = true)
         } }
-        .onFailure { mainHandler.post { Toast.makeText(this, "Không mở được video này", Toast.LENGTH_SHORT).show() } }
+        .onFailure { mainHandler.post {
+          Toast.makeText(this, "Không mở được video này", Toast.LENGTH_SHORT).show()
+          recommendationsLoading = false
+          recommendationsFor = ""
+          loadRecommendations(currentVideoId)
+          publishPlaybackState()
+        } }
     }
+  }
+
+  private fun recommendationSetJson() = RecommendationSet(
+    currentVideoId,
+    recommendationItems,
+    if (recommendationError == null) "related" else "trending",
+    recommendationError,
+  ).toJson().toString()
+
+  private fun loadRecommendations(videoId: String) {
+    if (recommendationsFor == videoId) return
+    val request = ++recommendationGeneration
+    recommendationsFor = videoId
+    recommendationsLoading = true
+    recommendationError = null
+    publishPlaybackState()
+    recommendationsExecutor.execute {
+      val result = runCatching {
+        RecommendationRepository(
+          NewPipeRelatedVideoSource(),
+          CachedTrendingRecommendationSource(TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(this))),
+        ).get(videoId)
+      }
+      mainHandler.post {
+        if (request != recommendationGeneration || currentVideoId != videoId) return@post
+        recommendationsLoading = false
+        if (result.isSuccess) {
+          val set = result.getOrThrow()
+          recommendationItems = set.items
+          recommendationIds = set.items.map { it.videoId }
+          recommendationError = set.error
+        } else {
+          recommendationItems = emptyList()
+          recommendationIds = emptyList()
+          recommendationError = "Không tải được bài gợi ý."
+        }
+        publishPlaybackState()
+        if (waitingEndedVideoId == videoId) {
+          waitingEndedVideoId = null
+          beginAutoplay(videoId)
+        }
+      }
+    }
+  }
+
+  private fun handleTrackEnded() {
+    val videoId = currentVideoId
+    if (!autoplayCoordinator.isEnabled() || videoId.isBlank()) return
+    if (recommendationsLoading || recommendationsFor != videoId) waitingEndedVideoId = videoId
+    else beginAutoplay(videoId)
+  }
+
+  private fun beginAutoplay(videoId: String) {
+    when (val decision = autoplayCoordinator.onEnded(videoId, recommendationIds, isNetworkAvailable())) {
+      is AutoplayDecision.Resolve -> resolveAutoplayCandidate(decision)
+      AutoplayDecision.Stop -> { autoplayToken = null; autoplayTransition = false; publishPlaybackState() }
+    }
+  }
+
+  private fun resolveAutoplayCandidate(decision: AutoplayDecision.Resolve) {
+    if (!autoplayCoordinator.isCurrent(decision.token)) return
+    autoplayToken = decision.token
+    autoplayTransition = true
+    publishPlaybackState()
+    resolver.execute {
+      runCatching { NewPipeVideoRepository.resolveVideo(decision.videoId) }
+        .onSuccess { resolved -> mainHandler.post {
+          if (autoplayCoordinator.completed(decision.token, decision.videoId)) {
+            autoplayTransition = false
+            setStream(resolved, decision.videoId, 0L, resetRetry = true)
+            autoplayToken = decision.token
+            publishPlaybackState()
+          }
+        } }
+        .onFailure { mainHandler.post { tryNextAutoplayCandidate(decision.token) } }
+    }
+  }
+
+  private fun tryNextAutoplayCandidate(token: Long) {
+    when (val next = autoplayCoordinator.failed(token, isNetworkAvailable())) {
+      is AutoplayDecision.Resolve -> resolveAutoplayCandidate(next)
+      AutoplayDecision.Stop -> {
+        autoplayToken = null
+        autoplayTransition = false
+        recommendationError = "Không phát được bài kế tiếp."
+        publishPlaybackState()
+      }
+    }
+  }
+
+  private fun isNetworkAvailable(): Boolean {
+    val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivity.activeNetwork ?: return false
+    val capabilities = connectivity.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+  }
+
+  private fun publishPlaybackState() {
+    val extras = android.os.Bundle().apply {
+      putString("videoId", currentVideoId)
+      putString("title", currentMetadata?.title)
+      putString("channelTitle", currentMetadata?.channelTitle)
+      putString("status", if (!::player.isInitialized) "idle" else when {
+        player.playbackState == Player.STATE_ENDED -> "ended"
+        player.isPlaying -> "playing"
+        player.playbackState == Player.STATE_BUFFERING -> "loading"
+        currentVideoId.isBlank() -> "idle"
+        else -> "paused"
+      })
+      putLong("positionMs", if (::player.isInitialized) player.currentPosition.coerceAtLeast(0L) else 0L)
+      putBoolean("autoplayEnabled", if (::autoplayCoordinator.isInitialized) autoplayCoordinator.isEnabled() else true)
+      putBoolean("recommendationsLoading", recommendationsLoading)
+      putBoolean("autoplayTransition", autoplayTransition)
+      putString("recommendationsJson", recommendationSetJson())
+      putString("error", recommendationError)
+    }
+    mediaSession?.setSessionExtras(extras)
   }
 
   companion object {

@@ -18,6 +18,7 @@ class PlaybackActivityLayoutTest {
         val root = activity.findViewById<ViewGroup>(android.R.id.content)
         val labels = collectText(root)
         assertTrue(labels.contains("Video liên quan"))
+        assertTrue(labels.any { it.startsWith("Tự phát bài tiếp theo:") })
         val fullscreen = findDescription(root, "Toàn màn hình")
         assertTrue(fullscreen != null)
         fullscreen!!.performClick()
