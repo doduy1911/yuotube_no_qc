@@ -11,6 +11,9 @@ class NativeVideoExtractorModule(
   reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
   private val executor = Executors.newSingleThreadExecutor()
+  private val trendingRepository by lazy {
+    TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(reactApplicationContext))
+  }
 
   override fun getName() = NAME
 
@@ -55,6 +58,18 @@ class NativeVideoExtractorModule(
       } catch (error: Throwable) {
         promise.reject("API_NETWORK_ERROR", error.message ?: "Không kết nối được YouTube API.", error)
       }
+    }
+  }
+
+  @ReactMethod
+  fun getTrendingMusic(section: String, forceRefresh: Boolean, promise: Promise) {
+    executor.execute {
+      runCatching { trendingRepository.get(section, forceRefresh).toJson().toString() }
+        .onSuccess { promise.resolve(it) }
+        .onFailure { error ->
+          if (error is YouTubeSearchException) promise.reject(error.code, error.message, error)
+          else promise.reject("API_NETWORK_ERROR", error.message ?: "Không tải được nhạc thịnh hành.", error)
+        }
     }
   }
 

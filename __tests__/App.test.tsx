@@ -21,16 +21,22 @@ jest.mock('../src/native/specs/NativeVideoExtractor', () => ({
     getFavorites: jest.fn().mockResolvedValue('[]'),
     setFavorite: jest.fn().mockResolvedValue(true),
     clearHistory: jest.fn().mockResolvedValue(true),
+    getTrendingMusic: jest.fn().mockImplementation((section: string) => Promise.resolve(JSON.stringify({section, items: [], regions: [section === 'vn' ? 'VN' : 'US', ...(section === 'international' ? ['GB'] : [])], updatedAt: 1, stale: false}))),
   },
 }));
 jest.mock('../src/native/YouTubeSearch', () => ({
   searchYouTube: (...args: unknown[]) => mockSearchYouTube(...args),
 }));
+jest.mock('../src/native/MusicDiscovery', () => ({
+  getTrendingMusic: jest.fn().mockResolvedValue({section: 'vn', items: [], regions: ['VN'], updatedAt: 1, stale: false}),
+}));
 
 test('renders correctly', async () => {
   let app: ReactTestRenderer.ReactTestRenderer;
-  await ReactTestRenderer.act(() => {
+  await ReactTestRenderer.act(async () => {
     app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+    await Promise.resolve();
   });
 
   expect(app!.root.findByProps({ testID: 'home-title' }).props.children).toBe(
@@ -39,7 +45,28 @@ test('renders correctly', async () => {
   expect(
     app!.root.findByProps({ testID: 'search-input' }).props.placeholder,
   ).toBe('Tìm video hoặc dán link YouTube');
-  expect(app!.root.findByProps({ testID: 'home-empty-state' })).toBeTruthy();
+  expect(app!.root.findByProps({testID: 'trending-home'})).toBeTruthy();
+  expect(app!.root.findByProps({children: 'Thịnh hành Việt Nam'})).toBeTruthy();
+});
+
+test('shows trending sections and recent history on the scrollable home tab', async () => {
+  const native = require('../src/native/specs/NativeVideoExtractor').default;
+  native.getHistory.mockResolvedValue(JSON.stringify([{
+    videoId: 'dQw4w9WgXcQ', title: 'Recently watched', channelTitle: 'Channel',
+    thumbnailUrl: null, durationMs: 120000, positionMs: 0, lastWatchedAt: 10, isFavorite: false,
+  }]));
+  let app: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => {
+    app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(app!.root.findByProps({children: 'Thịnh hành Việt Nam'})).toBeTruthy();
+  expect(app!.root.findByProps({children: 'Xem gần đây'})).toBeTruthy();
+  expect(app!.root.findByProps({children: 'Recently watched'})).toBeTruthy();
+  ['trending-vn-cards', 'trending-international-cards', 'recent-cards'].forEach(testID => {
+    expect(app!.root.findByProps({testID})).toBeTruthy();
+  });
 });
 
 test('a late response from an older query cannot replace newer results', async () => {
@@ -54,8 +81,10 @@ test('a late response from an older query cannot replace newer results', async (
   );
 
   let app: ReactTestRenderer.ReactTestRenderer;
-  await ReactTestRenderer.act(() => {
+  await ReactTestRenderer.act(async () => {
     app = ReactTestRenderer.create(<App />);
+    await Promise.resolve();
+    await Promise.resolve();
   });
   const input = app!.root.findByProps({testID: 'search-input'});
 

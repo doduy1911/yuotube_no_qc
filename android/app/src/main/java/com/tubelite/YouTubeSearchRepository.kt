@@ -104,7 +104,7 @@ internal object YouTubeSearchRepository {
     }
   }
 
-  private fun mapApiError(status: Int, body: JSONObject): YouTubeSearchException {
+  internal fun mapApiError(status: Int, body: JSONObject): YouTubeSearchException {
     val error = body.optJSONObject("error") ?: JSONObject()
     val message = error.optString("message").takeIf(String::isNotBlank)
       ?: "YouTube API request failed ($status)."

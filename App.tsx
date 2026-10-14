@@ -19,6 +19,7 @@ import {
 import NativeVideoExtractor from './src/native/specs/NativeVideoExtractor';
 import {parseYouTubeVideoId} from './src/domain/youtubeUrl';
 import {searchYouTube} from './src/native/YouTubeSearch';
+import HomeScreen from './src/features/home/HomeScreen';
 import {
   getSearchErrorMessage,
   mergeUniqueVideos,
@@ -226,7 +227,8 @@ function App() {
             />
           ) : null}
 
-          {!isSearching && results.length === 0 && !searchError && history.length === 0 ? <View testID="home-empty-state" style={styles.emptyState}>
+          {!isSearching && results.length === 0 && !searchError && !query.trim() ? <HomeScreen onSelectVideo={video => openVideo(video.videoId)} recentVideos={history} /> : null}
+          {!isSearching && results.length === 0 && !searchError && query.trim() ? <View testID="home-empty-state" style={styles.emptyState}>
             <View style={styles.emptyIconRing}>
               <View style={styles.emptyPlayTriangle} />
             </View>
@@ -238,13 +240,6 @@ function App() {
                 ? 'Thử từ khóa khác hoặc dán link YouTube.'
                 : 'Tìm kiếm một chủ đề hoặc dán liên kết video để bắt đầu.'}
             </Text>
-          </View> : null}
-          {!query.trim() && results.length === 0 && history.length > 0 ? <View style={styles.recentSection}>
-            <Text style={styles.recentHeading}>Xem gần đây</Text>
-            <FlatList horizontal data={history.slice(0, 6)} keyExtractor={item => item.videoId} renderItem={({item}) => <Pressable accessibilityRole="button" onPress={() => openVideo(item.videoId)} style={styles.recentCard}>
-              {item.thumbnailUrl ? <Image source={{uri: item.thumbnailUrl}} style={styles.recentThumbnail} /> : <View style={styles.recentThumbnail} />}
-              <Text numberOfLines={2} style={styles.recentTitle}>{item.title}</Text>
-            </Pressable>} />
           </View> : null}
           </>}
         </View>
