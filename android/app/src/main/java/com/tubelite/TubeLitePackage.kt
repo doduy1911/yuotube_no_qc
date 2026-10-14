@@ -8,7 +8,11 @@ import com.facebook.react.module.model.ReactModuleInfoProvider
 
 class TubeLitePackage : BaseReactPackage() {
   override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
-    return if (name == NativeVideoExtractorModule.NAME) NativeVideoExtractorModule(reactContext) else null
+    return when (name) {
+      NativeVideoExtractorModule.NAME -> NativeVideoExtractorModule(reactContext)
+      NativeApkUpdaterModule.NAME -> NativeApkUpdaterModule(reactContext)
+      else -> null
+    }
   }
 
   override fun getReactModuleInfoProvider(): ReactModuleInfoProvider {
@@ -17,6 +21,14 @@ class TubeLitePackage : BaseReactPackage() {
       NativeVideoExtractorModule.NAME to ReactModuleInfo(
         NativeVideoExtractorModule.NAME,
         NativeVideoExtractorModule::class.java.name,
+        false,
+        false,
+        false,
+        false,
+      ),
+      NativeApkUpdaterModule.NAME to ReactModuleInfo(
+        NativeApkUpdaterModule.NAME,
+        NativeApkUpdaterModule::class.java.name,
         false,
         false,
         false,

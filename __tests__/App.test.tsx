@@ -24,6 +24,14 @@ jest.mock('../src/native/specs/NativeVideoExtractor', () => ({
     getTrendingMusic: jest.fn().mockImplementation((section: string) => Promise.resolve(JSON.stringify({section, items: [], regions: [section === 'vn' ? 'VN' : 'US', ...(section === 'international' ? ['GB'] : [])], updatedAt: 1, stale: false}))),
   },
 }));
+jest.mock('../src/native/specs/NativeApkUpdater', () => ({
+  __esModule: true,
+  default: {
+    getDeviceInfo: jest.fn().mockResolvedValue('{}'),
+    getUpdateState: jest.fn().mockResolvedValue(JSON.stringify({state: 'idle'})),
+    startDownload: jest.fn(), cancelDownload: jest.fn(), inspectDownloadedApk: jest.fn(), installDownloadedApk: jest.fn(),
+  },
+}));
 jest.mock('../src/native/YouTubeSearch', () => ({
   searchYouTube: (...args: unknown[]) => mockSearchYouTube(...args),
 }));

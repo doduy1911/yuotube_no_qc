@@ -20,6 +20,7 @@ import {parseYouTubeVideoId} from './src/domain/youtubeUrl';
 import {searchYouTube} from './src/native/YouTubeSearch';
 import HomeScreen from './src/features/home/HomeScreen';
 import SearchBox from './src/features/search/SearchBox';
+import UpdateCenter from './src/features/update/UpdateCenter';
 import {
   getSearchErrorMessage,
   mergeUniqueVideos,
@@ -154,6 +155,7 @@ function App() {
         </View>
 
         <View style={styles.content}>
+          <UpdateCenter />
           {activeTab === 'library' ? <>
             <View style={styles.libraryHeading}>
               <Text style={styles.sectionTitle}>Thư viện</Text>

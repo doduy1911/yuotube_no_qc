@@ -19,6 +19,12 @@ cp .env.example .env
 
 Đặt `YOUTUBE_API_KEY=...` trong `.env`. File `.env` được Git bỏ qua. Key được nhúng vào APK tại thời điểm build; không chia sẻ APK có key riêng tư và hãy giới hạn key theo hướng dẫn Google Cloud.
 
+## Cập nhật APK
+
+Đặt `TUBELITE_UPDATE_SERVER_URL` trong `.env` thành origin của APK Update Platform, ví dụ `https://updates.example.com`; giá trị mặc định được ghi trong `.env.example`. Android gửi package name, versionCode, SDK và ABI của thiết bị tới API công khai. App tải bằng DownloadManager, xác minh kích thước, SHA-256, package, version và chứng thư ký, rồi mở PackageInstaller để người dùng xác nhận.
+
+APK release cần dùng HTTPS. Bản debug cho phép HTTP để kiểm thử với emulator; khi emulator gọi API trên máy phát triển, dùng `adb reverse tcp:3000 tcp:3000` và đặt URL là `http://127.0.0.1:3000`. Lần cài đầu có thể yêu cầu bật quyền **Cho phép cài ứng dụng không rõ nguồn gốc** cho TubeLite trong Android Settings.
+
 ## Chạy và kiểm tra
 
 ```sh
@@ -51,7 +57,7 @@ cd android
 ./gradlew :app:assembleRelease
 ```
 
-APK V2 được tạo tại `android/app/build/outputs/apk/release/app-release.apk`. Bản hiện tại dùng cùng debug keystore cục bộ như APK V1 trong repository, để thử cài đè V1 trên máy này. Đây không phải chữ ký phù hợp để phát hành công khai; muốn phát hành chính thức, cần cấu hình keystore riêng được quản lý an toàn và giữ ổn định qua các lần phát hành.
+APK versionCode 3 (`2.1.0`) được tạo tại `android/app/build/outputs/apk/release/app-release.apk`. Bản hiện tại dùng cùng debug keystore cục bộ như các APK kiểm thử trước để thử cài đè. Đây không phải chữ ký phù hợp để phát hành công khai; muốn phát hành chính thức, cần cấu hình keystore riêng được quản lý an toàn và giữ ổn định qua các lần phát hành.
 
 ## Cài APK
 

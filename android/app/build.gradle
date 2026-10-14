@@ -4,6 +4,7 @@ apply plugin: "com.google.devtools.ksp"
 apply plugin: "com.facebook.react"
 
 def youtubeApiKey = ""
+def updateServerUrl = "https://updates.example.com"
 def localEnvFile = rootProject.file("../.env")
 if (localEnvFile.isFile()) {
     localEnvFile.eachLine("UTF-8") { line ->
@@ -13,10 +14,17 @@ if (localEnvFile.isFile()) {
             if (parts.length == 2 && parts[0].trim() == "YOUTUBE_API_KEY") {
                 youtubeApiKey = parts[1].trim()
             }
+            if (parts.length == 2 && parts[0].trim() == "TUBELITE_UPDATE_SERVER_URL") {
+                updateServerUrl = parts[1].trim().replaceAll('/$', '')
+            }
         }
     }
 }
+if (System.getenv("TUBELITE_UPDATE_SERVER_URL")) {
+    updateServerUrl = System.getenv("TUBELITE_UPDATE_SERVER_URL").trim().replaceAll('/$', '')
+}
 def escapedYoutubeApiKey = youtubeApiKey.replace("\\", "\\\\").replace("\"", "\\\"")
+def escapedUpdateServerUrl = updateServerUrl.replace("\\", "\\\\").replace("\"", "\\\"")
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -106,9 +114,11 @@ android {
         applicationId "com.tubelite"
         minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "2.0"
+        versionCode 3
+        versionName "2.1.0"
         buildConfigField "String", "YOUTUBE_API_KEY", "\"${escapedYoutubeApiKey}\""
+        buildConfigField "String", "UPDATE_SERVER_URL", "\"${escapedUpdateServerUrl}\""
+        manifestPlaceholders = [usesCleartextTraffic: "false"]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -122,11 +132,13 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [usesCleartextTraffic: "true"]
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
