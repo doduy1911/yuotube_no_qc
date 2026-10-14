@@ -10,7 +10,7 @@
 
 **Spec:** [2026-10-14-tubelite-v2-design.md](../specs/2026-10-14-tubelite-v2-design.md)
 
-**Trạng thái:** Chỉ xuất tài liệu V2; các task code dưới đây chưa bắt đầu.
+**Trạng thái (2026-10-14):** Tasks 1–6 đã triển khai và commit riêng. Các kiểm tra còn bỏ trống bên dưới là kiểm tra thủ công chưa hoàn tất; xem `docs/verification-v2.md`.
 
 ## Global Constraints
 
@@ -42,68 +42,70 @@
 
 **Interfaces:** wrapper `getTrendingMusic(section: 'vn' | 'international', forceRefresh: boolean): Promise<TrendingSection>`; native bridge trả JSON string. Repository Kotlin nhận section/forceRefresh và trả model tương ứng spec.
 
-- [ ] Viết test mapping thời lượng/metadata, ghép US/GB xen kẽ có dedupe và giới hạn 20; cache trong một giờ không gọi lại mạng; quá hạn cập nhật; một nguồn lỗi vẫn dùng phần có sẵn; không có cache hiện lỗi.
-- [ ] Chạy test để xác nhận chưa có hành vi mới; dùng clock và HTTP client có thể thay bằng fake để kiểm tra cache, không dùng key thật trong test.
-- [ ] Tạo trending repository/cache; chia sẻ HTTP/error mapping của Google repository hiện có. Xác minh danh mục Music trên nguồn thật; lưu metadata theo vùng, không lưu key hoặc URL nguồn phát.
-- [ ] Tạo kiểu/wrapper TS theo spec, thêm bridge và tách HomeScreen; hai mục tải độc lập, pull-to-refresh, stale/error/empty state; chạm bài dùng luồng mở video hiện có.
-- [ ] Chạy test liên quan, lint/TypeScript và assembleDebug; kiểm tra hai mục thật trên emulator, chụp UI và ghi trường hợp quota/mạng/cache đã kiểm tra.
-- [ ] Commit `feat: add Vietnam and international trending music`.
+- [x] Viết test mapping thời lượng/metadata, ghép US/GB xen kẽ có dedupe và giới hạn 20; cache trong một giờ không gọi lại mạng; quá hạn cập nhật; một nguồn lỗi vẫn dùng phần có sẵn; không có cache hiện lỗi.
+- [x] Chạy test để xác nhận chưa có hành vi mới; dùng clock và HTTP client có thể thay bằng fake để kiểm tra cache, không dùng key thật trong test.
+- [x] Tạo trending repository/cache; chia sẻ HTTP/error mapping của Google repository hiện có. Xác minh danh mục Music trên nguồn thật; lưu metadata theo vùng, không lưu key hoặc URL nguồn phát.
+- [x] Tạo kiểu/wrapper TS theo spec, thêm bridge và tách HomeScreen; hai mục tải độc lập, pull-to-refresh, stale/error/empty state; chạm bài dùng luồng mở video hiện có.
+- [x] Chạy test liên quan, lint/TypeScript và assembleDebug; kiểm tra hai mục thật trên emulator, chụp UI và ghi trường hợp quota/mạng/cache đã kiểm tra.
+- [x] Commit `feat: add Vietnam and international trending music`.
 
 ## Task 2 — Gợi ý từ khóa tìm kiếm
 
 **Interfaces:** `getSearchSuggestions(query: string): Promise<string[]>`; native bridge JSON string qua wrapper, NewPipe `suggestionList(query)` chạy trên executor riêng để không chặn mở video.
 
-- [ ] Viết test: dưới hai ký tự không gọi nguồn; debounce 300 ms; tối đa tám cụm từ duy nhất; A đến sau B bị bỏ; xóa/submit vô hiệu phản hồi; chọn gợi ý chỉ submit một lần; lỗi gợi ý không chặn tìm thủ công; link hợp lệ bỏ qua autocomplete.
-- [ ] Chạy test thất bại trước khi thêm hành vi; dùng fake timers và Promise có thể điều khiển thứ tự trả về.
-- [ ] Thêm repository/bridge/wrapper và tách SearchBox. Giữ search.list chỉ chạy khi submit/chạm gợi ý; dùng generation ID cho cả autocomplete và kết quả tìm kiếm.
-- [ ] Chạy test, lint/TypeScript và assembleDebug; thử gõ tiếng Việt, chọn gợi ý, nhập/xóa nhanh và dán link trên emulator; chụp UI.
-- [ ] Commit `feat: add live search suggestions`.
+- [x] Viết test: dưới hai ký tự không gọi nguồn; debounce 300 ms; tối đa tám cụm từ duy nhất; A đến sau B bị bỏ; xóa/submit vô hiệu phản hồi; chọn gợi ý chỉ submit một lần; lỗi gợi ý không chặn tìm thủ công; link hợp lệ bỏ qua autocomplete.
+- [x] Chạy test thất bại trước khi thêm hành vi; dùng fake timers và Promise có thể điều khiển thứ tự trả về.
+- [x] Thêm repository/bridge/wrapper và tách SearchBox. Giữ search.list chỉ chạy khi submit/chạm gợi ý; dùng generation ID cho cả autocomplete và kết quả tìm kiếm.
+- [x] Chạy test, lint/TypeScript và assembleDebug; thử gõ tiếng Việt, chọn gợi ý, nhập/xóa nhanh và dán link trên emulator; chụp UI.
+- [x] Commit `feat: add live search suggestions`.
 
 ## Task 3 — Nguồn bài gợi ý
 
 **Interfaces:** native `getRecommendations(videoId: String): RecommendationSet`; `RecommendationSet` chứa videoId, items và source theo spec. Native dùng cùng VideoSummary cho UI và autoplay.
 
-- [ ] Viết test lọc mục không phải video/live/upcoming, ID hiện tại, ID trùng; related rỗng/lỗi chuyển sang trending; fallback xen kẽ VN/quốc tế; hai nguồn đều lỗi trả trạng thái rỗng/lỗi hữu hạn.
-- [ ] Chạy test thấy thiếu hành vi; thêm RecommendationRepository và mở rộng NewPipe repository bằng getRelatedItems(). Tái sử dụng StreamInfo trong một lần resolve khi có thể, không giữ URL token trong cache bền vững.
-- [ ] Giới hạn 20 ứng viên, giữ thứ tự nguồn, trả nhãn related/trending đúng dữ liệu. Mỗi yêu cầu gắn video ID để bên nhận bỏ phản hồi cũ.
-- [ ] Chạy test và assembleDebug; kiểm tra ít nhất một video công khai có related thực. Dùng fake nguồn để chứng minh fallback/lỗi, phân biệt với thử nghiệm trực tuyến.
-- [ ] Commit `feat: add related video recommendations`.
+- [x] Viết test lọc mục không phải video/live/upcoming, ID hiện tại, ID trùng; related rỗng/lỗi chuyển sang trending; fallback xen kẽ VN/quốc tế; hai nguồn đều lỗi trả trạng thái rỗng/lỗi hữu hạn.
+- [x] Chạy test thấy thiếu hành vi; thêm RecommendationRepository và mở rộng NewPipe repository bằng getRelatedItems(). Tái sử dụng StreamInfo trong một lần resolve khi có thể, không giữ URL token trong cache bền vững.
+- [x] Giới hạn 20 ứng viên, giữ thứ tự nguồn, trả nhãn related/trending đúng dữ liệu. Mỗi yêu cầu gắn video ID để bên nhận bỏ phản hồi cũ.
+- [x] Chạy test và assembleDebug; kiểm tra ít nhất một video công khai có related thực. Dùng fake nguồn để chứng minh fallback/lỗi, phân biệt với thử nghiệm trực tuyến.
+- [x] Commit `feat: add related video recommendations`.
 
 ## Task 4 — Màn phát dọc
 
 **Interfaces:** `PlaybackScreenState` chứa currentVideo/status/positionMs/autoplayEnabled/recommendations/recommendationsLoading/error. MediaSession: GET_PLAYBACK_SCREEN_STATE, SELECT_VIDEO(videoId), SET_AUTOPLAY(enabled), sự kiện PLAYBACK_SCREEN_STATE_CHANGED. Task này bổ sung snapshot, chọn bài và hiển thị; hành vi/công tắc autoplay hoàn thiện tại Task 5.
 
 - [ ] Viết test cho kết nối UI lấy snapshot hiện tại, đổi bài bỏ metadata/gợi ý cũ, chọn bài liên tiếp chỉ mở lựa chọn cuối; đổi chất lượng giữ pause và vị trí; Back toàn màn hình không đổi phiên.
-- [ ] Sửa Activity thành bố cục video 16:9 ở trên, thông tin/yêu thích và danh sách cuộn bên dưới. Dùng dp/window insets thay vị trí nút cố định bằng pixel; video dọc fit trong khung.
-- [ ] Đưa luồng chọn video của bridge và Activity về cùng cơ chế request generation tại native. Service phát snapshot sau đổi bài/trạng thái/gợi ý; Activity đăng ký/hủy listener theo lifecycle.
-- [ ] Toàn màn hình và xoay chỉ đổi layout/view gắn cùng MediaController; PiP ẩn phần thông tin/gợi ý, thoát PiP phục hồi bố cục. Danh sách có loading/error/empty và nhãn Khám phá thêm khi fallback.
-- [ ] Chụp video ID/metadata/vị trí trước khi lưu bất đồng bộ; không đọc currentMetadata có thể đã đổi trong executor. Sửa giữ playWhenReady khi đổi chất lượng.
+- [x] Sửa Activity thành bố cục video 16:9 ở trên, thông tin/yêu thích và danh sách cuộn bên dưới. Dùng dp/window insets thay vị trí nút cố định bằng pixel; video dọc fit trong khung.
+- [x] Đưa luồng chọn video của bridge và Activity về cùng cơ chế request generation tại native. Service phát snapshot sau đổi bài/trạng thái/gợi ý; Activity đăng ký/hủy listener theo lifecycle.
+- [x] Toàn màn hình và xoay chỉ đổi layout/view gắn cùng MediaController; PiP ẩn phần thông tin/gợi ý, thoát PiP phục hồi bố cục. Danh sách có loading/error/empty và nhãn Khám phá thêm khi fallback.
+- [x] Chụp video ID/metadata/vị trí trước khi lưu bất đồng bộ; không đọc currentMetadata có thể đã đổi trong executor. Sửa giữ playWhenReady khi đổi chất lượng.
 - [ ] Chạy test và assembleDebug; kiểm tra màn dọc, ngang, Back, PiP và đổi bài nhanh trên emulator; kiểm tra một MediaSession/player và chụp các trạng thái UI.
-- [ ] Commit `feat: add portrait watch screen with recommendations`.
+- [x] Commit `feat: add portrait watch screen with recommendations`.
 
 ## Task 5 — Tự phát bài kế tiếp
 
 **Interfaces:** `AutoplayCoordinator` nhận ended, danh sách ứng viên, lựa chọn thủ công và enabled; phát quyết định resolve/stop. Service giữ coordinator; `PlaybackSettings` lưu boolean mặc định true. Hoàn thiện SET_AUTOPLAY và công tắc từ Task 4.
 
-- [ ] Viết test enabled/disabled, ghi nhớ sau mở lại, chọn ứng viên đầu tiên hợp lệ, bắt đầu bài tự chuyển tại 0, tránh 50 bài gần nhất, cho phép chọn lại thủ công, hết danh sách dừng.
+- [x] Viết test enabled/disabled, ghi nhớ sau mở lại, chọn ứng viên đầu tiên hợp lệ, bắt đầu bài tự chuyển tại 0, tránh 50 bài gần nhất, cho phép chọn lại thủ công, hết danh sách dừng.
 - [ ] Viết test ended phát hai lần chỉ chuyển một lần; pause/quality/PiP không chuyển bài; tắt autoplay/chọn bài mới trong lúc resolve làm kết quả cũ mất hiệu lực; chờ related chưa về chỉ quyết định một lần.
 - [ ] Viết test tối đa ba ứng viên lỗi mỗi lần chuyển, mất mạng dừng ngay, source-expiry retry không bị coi là ended. Test lưu cuối bài cũ và vị trí bài mới không ghi chéo ID.
-- [ ] Chạy test trước khi triển khai; thêm coordinator/settings, dùng sự kiện Player.STATE_ENDED trong service, không tạo timer JS hoặc player thứ hai.
-- [ ] Resolve URL khi cần phát, không preload toàn bộ stream URL. Khi ứng viên bị loại/lỗi, cập nhật snapshot danh sách; dùng lại metadata repository và giới hạn request của spec.
-- [ ] Hoàn thiện công tắc và trạng thái đang chuyển/lỗi; sync snapshot khi Activity kết nối lại. Notification cập nhật metadata của bài mới; service xử lý ngay cả khi Activity không tồn tại.
+- [x] Chạy test trước khi triển khai; thêm coordinator/settings, dùng sự kiện Player.STATE_ENDED trong service, không tạo timer JS hoặc player thứ hai.
+- [x] Resolve URL khi cần phát, không preload toàn bộ stream URL. Khi ứng viên bị loại/lỗi, cập nhật snapshot danh sách; dùng lại metadata repository và giới hạn request của spec.
+- [x] Hoàn thiện công tắc và trạng thái đang chuyển/lỗi; sync snapshot khi Activity kết nối lại. Notification cập nhật metadata của bài mới; service xử lý ngay cả khi Activity không tồn tại.
 - [ ] Chạy test và assembleDebug; thử hết bài bằng tua gần cuối, chuyển trong nền/khóa màn/PiP, tắt công tắc lúc đang tải, mở lại app và lịch sử/yêu thích trên emulator.
-- [ ] Commit `feat: add persistent autoplay and background next track`.
+- [x] Commit `feat: add persistent autoplay and background next track`.
 
 ## Task 6 — Nghiệm thu và APK V2
 
-- [ ] Cập nhật Android versionCode=2, versionName=2.0; giữ applicationId com.tubelite và chữ ký tương thích APK V1 để cài đè.
-- [ ] Chạy `npm test -- --runInBand`, `npm run lint`, `npx tsc --noEmit` và trong android chạy `./gradlew :app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleRelease`; chỉ đánh dấu qua khi xem được kết quả.
-- [ ] Cài V1 trên thiết bị kiểm thử, tạo lịch sử/yêu thích rồi cài đè APK V2 không xóa app; kiểm tra dữ liệu được giữ và công tắc autoplay mặc định lần đầu.
+- [x] Cập nhật Android versionCode=2, versionName=2.0; giữ applicationId com.tubelite và chữ ký tương thích APK V1 để cài đè.
+- [x] Chạy `npm test -- --runInBand`, `npm run lint`, `npx tsc --noEmit` và trong android chạy `./gradlew :app:testDebugUnitTest :app:connectedDebugAndroidTest :app:assembleRelease`; chỉ đánh dấu qua khi xem được kết quả.
+- [x] Cài V1 trên thiết bị kiểm thử, tạo lịch sử/yêu thích rồi cài đè APK V2 không xóa app; kiểm tra dữ liệu được giữ và công tắc autoplay mặc định lần đầu.
 - [ ] Kiểm tra lại các mục nghiệm thu spec, gồm mạng mất, nguồn lỗi, đổi truy vấn nhanh, tiếp tục đúng vị trí, bài kết thúc phát lại từ đầu và đổi chất lượng khi pause.
 - [ ] Cài đúng APK release và kiểm tra khi Metro không chạy/không có adb reverse: mở home, tìm bài, phát, gợi ý và autoplay. Xác minh foreground notification, khóa màn hình, xoay và PiP.
 - [ ] Ghi bằng chứng, ảnh UI và giới hạn thiết bị thật trong `docs/verification-v2.md`; cập nhật README hướng dẫn build/cài/thay key và vị trí APK. Không đưa key vào ảnh/log/tài liệu.
-- [ ] Kiểm tra git diff/staged, commit `docs: document V2 APK and verification`; phát hành GitHub V2 chỉ khi người dùng yêu cầu.
+- [x] Kiểm tra git diff/staged, commit `docs: document V2 APK and verification`; phát hành GitHub V2 chỉ khi người dùng yêu cầu.
 
 ## Quy tắc đánh dấu hoàn thành
 
 Test tự động phải kiểm tra hành vi, không chỉ giả lập đúng cùng thuật toán của implementation. Ghi riêng nguồn giả, nguồn trực tuyến, emulator và thiết bị thật. Nếu NewPipe hoặc chart không hoạt động thực tế, xác định nguyên nhân trước khi coi tính năng đạt nghiệm thu. Tài liệu này chưa xác nhận bất kỳ task code V2 nào đã hoàn thành.
+
+**Kiểm tra chưa chạy:** xoay/PiP và notification/khóa màn hình end-to-end; đổi chất lượng khi pause trên emulator; kiểm tra trọn bộ mất mạng/khôi phục vị trí trên thiết bị; và lưu screenshot UI vào artifact. Các hạn chế này được nêu trong `docs/verification-v2.md`.
