@@ -14,6 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
+import androidx.test.platform.app.InstrumentationRegistry
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackAutoplaySessionSmokeTest {
