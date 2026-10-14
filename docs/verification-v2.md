@@ -26,7 +26,7 @@ V2 tăng `versionCode` lên 2 và `versionName` lên 2.0. Instrumentation tạo 
 
 ## APK
 
-`android/app/build/outputs/apk/release/app-release.apk` — bản release đã assemble với key lấy từ `.env` tại thời điểm build; dung lượng 56 MB. SHA-256: `5275adcb5e223f3048768c86dcd158b94b50a4d814a56628e7fd138d21d3b3f5`. Không commit key hoặc APK có key người dùng vào Git.
+`android/app/build/outputs/apk/release/app-release.apk` — bản release đã assemble trong repo chính với key lấy từ `.env`; dung lượng 56 MB. SHA-256: `9564d070e32c1d94476c95677af32dad82004e7da4b2d17c39f775b885f31631`. APK và `.env` đều bị Git bỏ qua. Chữ ký APK vẫn khớp V1 (`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`).
 
 ## Chưa xác nhận trên thiết bị thật
 
