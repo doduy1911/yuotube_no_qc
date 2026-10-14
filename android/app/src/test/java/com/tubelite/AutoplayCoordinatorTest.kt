@@ -41,6 +41,53 @@ class AutoplayCoordinatorTest {
     assertEquals(AutoplayDecision.Stop, coordinator.failed(decision.token, true))
   }
 
+  @Test fun staleFailureDoesNotCancelNewerPendingCandidate() {
+    val coordinator = AutoplayCoordinator()
+    val first = coordinator.onEnded("current0001", listOf("next0000001", "other000001"), true) as AutoplayDecision.Resolve
+    val second = coordinator.failed(first.token, true) as AutoplayDecision.Resolve
+    assertEquals(AutoplayDecision.Stop, coordinator.failed(first.token, true))
+    assertTrue(coordinator.isCurrent(second.token))
+    assertEquals("other000001", second.videoId)
+  }
+
+  @Test fun usesTrendingFallbackWhenRelatedCandidatesAreAllRecent() {
+    val coordinator = AutoplayCoordinator()
+    coordinator.manualSelection("current0001")
+    val related = listOf("recent00001", "older000001")
+    related.forEach(coordinator::rememberPlayed)
+    val decision = coordinator.onEnded("current0001", related, true, listOf("trend000001"))
+    assertTrue(decision is AutoplayDecision.Resolve)
+    assertEquals("trend000001", (decision as AutoplayDecision.Resolve).videoId)
+  }
+
+  @Test fun countsOnlyFreshAutoplayCandidatesUpToAttemptLimit() {
+    val coordinator = AutoplayCoordinator()
+    coordinator.manualSelection("current0001")
+    coordinator.rememberPlayed("recent00001")
+    assertEquals(2, coordinator.freshCandidateCount("current0001", listOf("recent00001", "next0000001", "other000001")))
+  }
+
+  @Test fun stopCancelsPendingAutoplayResolution() {
+    val coordinator = AutoplayCoordinator()
+    val pending = coordinator.onEnded("current0001", listOf("next0000001"), true) as AutoplayDecision.Resolve
+    coordinator.cancelPending()
+    assertFalse(coordinator.isCurrent(pending.token))
+    assertFalse(coordinator.completed(pending.token, pending.videoId))
+    assertEquals(AutoplayDecision.Stop, coordinator.failed(pending.token, true))
+  }
+
+  @Test fun exhaustedRelatedCandidateCanContinueWithFallbackWithinThreeAttempts() {
+    val coordinator = AutoplayCoordinator()
+    val first = coordinator.onEnded("current0001", listOf("next0000001"), true) as AutoplayDecision.Resolve
+    val fallback = coordinator.failed(first.token, true) as AutoplayDecision.NeedFallback
+    val second = coordinator.supplyFallback(fallback.token, listOf("next0000001", "other000001"), true) as AutoplayDecision.Resolve
+    assertEquals("other000001", second.videoId)
+    val finalFallback = coordinator.failed(second.token, true) as AutoplayDecision.NeedFallback
+    val third = coordinator.supplyFallback(finalFallback.token, listOf("last0000001"), true) as AutoplayDecision.Resolve
+    assertEquals("last0000001", third.videoId)
+    assertEquals(AutoplayDecision.Stop, coordinator.failed(third.token, true))
+  }
+
   @Test fun avoidsFiftyRecentIdsButManualSelectionStartsNewSessionAndAllowsRepeat() {
     val coordinator = AutoplayCoordinator()
     coordinator.manualSelection("current0001")

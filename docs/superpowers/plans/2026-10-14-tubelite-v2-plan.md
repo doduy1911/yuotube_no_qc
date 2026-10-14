@@ -106,6 +106,6 @@
 
 ## Quy tắc đánh dấu hoàn thành
 
-Test tự động phải kiểm tra hành vi, không chỉ giả lập đúng cùng thuật toán của implementation. Ghi riêng nguồn giả, nguồn trực tuyến, emulator và thiết bị thật. Nếu NewPipe hoặc chart không hoạt động thực tế, xác định nguyên nhân trước khi coi tính năng đạt nghiệm thu. Tài liệu này chưa xác nhận bất kỳ task code V2 nào đã hoàn thành.
+Test tự động phải kiểm tra hành vi, không chỉ giả lập đúng cùng thuật toán của implementation. Ghi riêng nguồn giả, nguồn trực tuyến, emulator và thiết bị thật. Nếu NewPipe hoặc chart không hoạt động thực tế, xác định nguyên nhân trước khi coi tính năng đạt nghiệm thu.
 
-**Kiểm tra chưa chạy:** xoay/PiP và notification/khóa màn hình end-to-end; đổi chất lượng khi pause trên emulator; kiểm tra trọn bộ mất mạng/khôi phục vị trí trên thiết bị; và lưu screenshot UI vào artifact. Các hạn chế này được nêu trong `docs/verification-v2.md`.
+**Trạng thái thực hiện:** Tasks 1–6 đã được triển khai và commit theo từng phần. Sau lượt review, đã bổ sung sửa lỗi công tắc autoplay, stale request/generation, nguồn fallback, lưu vị trí video kết thúc và bố cục toàn màn hình; kiểm tra lại bằng Jest, ESLint, TypeScript, Kotlin unit tests, 10 instrumentation tests trên Pixel_7 và release assemble. Các bước xoay/PiP end-to-end, notification/khóa màn hình trên thiết bị thật, đổi chất lượng khi pause, mất mạng thực tế và screenshot artifact vẫn chưa được xác nhận; xem `docs/verification-v2.md`.

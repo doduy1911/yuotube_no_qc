@@ -2,11 +2,12 @@ package com.tubelite
 
 internal sealed interface AutoplayDecision {
   data class Resolve(val videoId: String, val token: Long) : AutoplayDecision
+  data class NeedFallback(val token: Long) : AutoplayDecision
   data object Stop : AutoplayDecision
 }
 
 internal class AutoplayCoordinator(enabled: Boolean = true) {
-  private data class Pending(val generation: Long, val candidates: List<String>, val attempts: Int, val token: Long, val resolvedVideoId: String? = null)
+  private data class Pending(val generation: Long, val originVideoId: String, val candidates: List<String>, val attempts: Int, val token: Long, val resolvedVideoId: String? = null)
   private var enabled = enabled
   private var generation = 0L
   private var token = 0L
@@ -19,9 +20,15 @@ internal class AutoplayCoordinator(enabled: Boolean = true) {
     enabled = value; generation++; pending = null
   }
 
+  fun cancelPending() { generation++; pending = null }
+
   fun isEnabled() = enabled
   fun isCurrent(token: Long) = enabled && pending?.let { it.token == token && it.generation == generation } == true
   fun isCurrentGeneration() = generation >= 0L
+
+  fun freshCandidateCount(videoId: String, recommendations: List<String>): Int = recommendations.asSequence()
+    .filter { it.matches(VIDEO_ID) && it != videoId && it !in recent }
+    .distinct().take(MAX_CANDIDATES).count()
 
   fun manualSelection(videoId: String) {
     generation++; pending = null; handledEndedVideoId = null
@@ -34,26 +41,43 @@ internal class AutoplayCoordinator(enabled: Boolean = true) {
     while (recent.size > RECENT_LIMIT) recent.removeFirst()
   }
 
-  fun onEnded(videoId: String, recommendations: List<String>, networkAvailable: Boolean): AutoplayDecision {
+  fun onEnded(videoId: String, recommendations: List<String>, networkAvailable: Boolean, fallbackRecommendations: List<String> = emptyList()): AutoplayDecision {
     if (!enabled || videoId.isBlank() || handledEndedVideoId == videoId) return AutoplayDecision.Stop
     handledEndedVideoId = videoId
     if (!networkAvailable) return AutoplayDecision.Stop
-    val candidates = recommendations.asSequence()
+    val candidates = (recommendations + fallbackRecommendations).asSequence()
       .filter { it.matches(VIDEO_ID) && it != videoId && it !in recent }
       .distinct().take(MAX_CANDIDATES).toList()
     if (candidates.isEmpty()) return AutoplayDecision.Stop
-    return issue(candidates, 1)
+    return issue(videoId, candidates, 1)
   }
 
   fun failed(requestToken: Long, networkAvailable: Boolean): AutoplayDecision {
     val current = pending ?: return AutoplayDecision.Stop
-    if (current.token != requestToken || current.generation != generation || !enabled || !networkAvailable || current.attempts >= MAX_CANDIDATES) {
+    if (current.token != requestToken) return AutoplayDecision.Stop
+    if (current.generation != generation || !enabled || !networkAvailable || current.attempts >= MAX_CANDIDATES) {
       pending = null
       return AutoplayDecision.Stop
     }
+    if (current.resolvedVideoId == null) current.candidates.firstOrNull()?.let(::rememberPlayed)
     val remaining = if (current.resolvedVideoId != null) current.candidates else current.candidates.drop(1)
-    if (remaining.isEmpty()) { pending = null; return AutoplayDecision.Stop }
-    return issue(remaining, current.attempts + 1)
+    if (remaining.isEmpty()) {
+      pending = current.copy(candidates = emptyList(), resolvedVideoId = null)
+      return AutoplayDecision.NeedFallback(current.token)
+    }
+    return issue(current.originVideoId, remaining, current.attempts + 1)
+  }
+
+  fun supplyFallback(requestToken: Long, candidates: List<String>, networkAvailable: Boolean): AutoplayDecision {
+    val current = pending ?: return AutoplayDecision.Stop
+    if (current.token != requestToken) return AutoplayDecision.Stop
+    if (current.generation != generation || !enabled || !networkAvailable || current.attempts >= MAX_CANDIDATES) {
+      pending = null
+      return AutoplayDecision.Stop
+    }
+    val fresh = candidates.asSequence().filter { it.matches(VIDEO_ID) && it != current.originVideoId && it !in recent }.distinct().toList()
+    if (fresh.isEmpty()) { pending = null; return AutoplayDecision.Stop }
+    return issue(current.originVideoId, fresh, current.attempts + 1)
   }
 
   fun completed(requestToken: Long, videoId: String): Boolean {
@@ -62,10 +86,10 @@ internal class AutoplayCoordinator(enabled: Boolean = true) {
     pending = current.copy(candidates = current.candidates.drop(1), resolvedVideoId = videoId); rememberPlayed(videoId); return true
   }
 
-  private fun issue(candidates: List<String>, attempts: Int): AutoplayDecision {
+  private fun issue(originVideoId: String, candidates: List<String>, attempts: Int): AutoplayDecision {
     val id = candidates.firstOrNull() ?: return AutoplayDecision.Stop
     token++
-    pending = Pending(generation, candidates, attempts, token)
+    pending = Pending(generation, originVideoId, candidates, attempts, token)
     return AutoplayDecision.Resolve(id, token)
   }
 

@@ -10,11 +10,13 @@ Ngày chạy: 2026-10-14. Môi trường UI: Android Emulator Pixel_7, Android 1
 | Gợi ý từ khóa | Gõ `em cua`, chọn gợi ý Sơn Tùng; dán URL YouTube trên Pixel_7 | NewPipe trả gợi ý thật; chọn gợi ý tìm bằng Google; URL mở PlaybackActivity |
 | Gợi ý video | Instrumentation gọi NewPipe related với video công khai `dQw4w9WgXcQ` | Có mục video liên quan hợp lệ; test service snapshot nhận được danh sách |
 | Màn phát | Instrumentation xác nhận mục Video liên quan, nút toàn màn hình và thao tác Back | Nội dung ẩn trong toàn màn hình và phục hồi khi Back |
-| Autoplay | Instrumentation chọn video công khai, nhận gợi ý, tua gần cuối và theo dõi MediaSession | Video kế tiếp được service tự resolve và chọn; công tắc tắt/bật lưu được qua SharedPreferences |
-| Hủy resolve | Unit test điều phối | Tắt autoplay/chọn bài khác vô hiệu token cũ; sự kiện ended trùng không xử lý lần hai |
-| Giới hạn ứng viên | Unit test điều phối | Tối đa ba ứng viên; không có mạng thì dừng; bỏ qua 50 ID gần nhất |
+| Autoplay | Instrumentation chọn video công khai, nhận gợi ý, tua gần cuối và theo dõi MediaSession | Video kế tiếp được service tự resolve và chọn; công tắc UI đổi Bật/Tắt cả hai chiều |
+| Hủy resolve | Unit test điều phối và instrumentation | Tắt autoplay, chọn bài khác, Stop và token lỗi cũ vô hiệu hóa kết quả tương ứng; ended trùng không xử lý lần hai |
+| Giới hạn ứng viên/fallback | Unit test điều phối | Thử tối đa ba ứng viên; fallback trending sau khi related hết ứng viên mới dùng được; bỏ qua 50 ID gần nhất; không có mạng thì dừng |
+| Lịch sử đã nghe | Kiểm tra các nhánh lưu vị trí trong service và unit test | Video ở trạng thái ended được lưu lại vị trí 0 kể cả lúc service dừng hoặc đổi bài |
+| Reviewer pass | Rà soát lại các thay đổi trong nhánh V2 | Sửa toggle, trạng thái lựa chọn video, đổi chất lượng cũ, nguồn gợi ý, tỷ lệ màn hình và điều phối fallback; không còn lỗi chặn |
 | API/TypeScript | Jest, ESLint và `tsc --noEmit` | 26 test qua; lint và typecheck qua |
-| Android | Kotlin unit tests, instrumentation trên Pixel_7, debug và release assemble | Qua; instrumentation gồm Room, bố cục, NewPipe, autoplay và snapshot |
+| Android | Kotlin unit tests, 10 instrumentation tests trên Pixel_7, debug và release assemble | Qua; instrumentation gồm Room, nâng cấp dữ liệu, bố cục, NewPipe related và autoplay MediaSession |
 
 ## Cài đè và dữ liệu V1
 
@@ -24,7 +26,7 @@ V2 tăng `versionCode` lên 2 và `versionName` lên 2.0. Instrumentation tạo 
 
 ## APK
 
-`android/app/build/outputs/apk/release/app-release.apk` — bản release đã assemble với key lấy từ `.env` tại thời điểm build. Không commit key hoặc APK có key người dùng vào Git.
+`android/app/build/outputs/apk/release/app-release.apk` — bản release đã assemble với key lấy từ `.env` tại thời điểm build; dung lượng 56 MB. SHA-256: `5275adcb5e223f3048768c86dcd158b94b50a4d814a56628e7fd138d21d3b3f5`. Không commit key hoặc APK có key người dùng vào Git.
 
 ## Chưa xác nhận trên thiết bị thật
 

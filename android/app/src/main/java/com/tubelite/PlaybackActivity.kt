@@ -41,14 +41,21 @@ class PlaybackActivity : Activity() {
   private lateinit var recommendationsStatus: TextView
   private lateinit var rootLayout: LinearLayout
   private val executor = Executors.newSingleThreadExecutor()
-  private val requests = PlaybackRequestGeneration()
+  private var qualityRequestGeneration = 0L
   private var selectedQualityId = ""
+  private var qualityForVideoId = ""
   private var controllerFuture: ListenableFuture<MediaController>? = null
   private var isFullscreen = false
   private var currentVideoId = ""
   private val playerListener = object : Player.Listener {
     override fun onVideoSizeChanged(videoSize: VideoSize) = updatePipAspectRatio(videoSize)
-    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refreshFromController()
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+      qualityRequestGeneration++
+      val newId = mediaItem?.mediaId.orEmpty()
+      if (newId != qualityForVideoId) { qualityForVideoId = newId; selectedQualityId = "" }
+      qualityButton.isEnabled = true
+      refreshFromController()
+    }
     override fun onMediaMetadataChanged(mediaMetadata: androidx.media3.common.MediaMetadata) = refreshMetadata()
     override fun onPlaybackStateChanged(playbackState: Int) = updatePlaybackStatus()
     override fun onIsPlayingChanged(isPlaying: Boolean) = updatePlaybackStatus()
@@ -85,7 +92,7 @@ class PlaybackActivity : Activity() {
       addView(fullscreenButton, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { bottomMargin = dp(8); marginEnd = dp(8) })
     }
     rootLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(10, 10, 10)) }
-    rootLayout.addView(video, LinearLayout.LayoutParams(-1, 0, 0.5625f))
+    rootLayout.addView(video, LinearLayout.LayoutParams(-1, 0))
     detailsPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
     titleView = text(19f, Color.WHITE).apply { maxLines = 2 }
     channelView = text(14f, Color.LTGRAY).apply { setPadding(0, dp(4), 0, dp(8)) }
@@ -123,7 +130,7 @@ class PlaybackActivity : Activity() {
     if (currentVideoId.isNotBlank()) channelView.text = listOf(player.mediaMetadata.artist?.toString().orEmpty(), state).filter(String::isNotBlank).joinToString(" · ")
   }
   private fun requestRecommendations(id: String) {
-    requests.next(id); recommendationsList.removeAllViews(); recommendationsStatus.text = "Đang tải gợi ý…"
+    recommendationsList.removeAllViews(); recommendationsStatus.text = "Đang tải gợi ý…"
     (playerView.player as? MediaController)?.let(::requestScreenSnapshot)
   }
   private fun requestScreenSnapshot(controller: MediaController) {
@@ -154,7 +161,7 @@ class PlaybackActivity : Activity() {
   }
   private fun toggleAutoplay() {
     val controller = playerView.player as? MediaController ?: return
-    val enabled = !autoplayButton.text.toString().endsWith("Tắt")
+    val enabled = autoplayButton.text.toString().endsWith("Tắt")
     controller.sendCustomCommand(SessionCommand(PlaybackService.ACTION_SET_AUTOPLAY, android.os.Bundle.EMPTY), android.os.Bundle().apply { putBoolean("enabled", enabled) })
   }
   private fun addRecommendation(item: VideoSummary) {
@@ -171,10 +178,8 @@ class PlaybackActivity : Activity() {
     } }
   }
   private fun selectVideo(id: String) {
-    val req = requests.next(id); currentVideoId = id; titleView.text = "Đang mở video…"; recommendationsList.removeAllViews(); recommendationsStatus.text = "Đang tải gợi ý…"
-    executor.execute { runCatching { NewPipeVideoRepository.resolveVideo(id) }.onSuccess { stream -> runOnUiThread {
-      if (!isDestroyed && requests.isCurrent(req, id)) { PlaybackService.start(this, stream, id, 0L); refreshFavorite() }
-    } }.onFailure { runOnUiThread { if (!isDestroyed && requests.isCurrent(req, id)) Toast.makeText(this, "Không mở được video này", Toast.LENGTH_SHORT).show() } } }
+    val controller = playerView.player as? MediaController ?: return
+    controller.sendCustomCommand(SessionCommand(PlaybackService.ACTION_SELECT_VIDEO, android.os.Bundle.EMPTY), android.os.Bundle().apply { putString("videoId", id) })
   }
   private fun refreshFavorite() {
     val id = currentVideoId; if (id.isBlank()) return
@@ -192,8 +197,8 @@ class PlaybackActivity : Activity() {
     }.onSuccess { enabled -> runOnUiThread { if (!isDestroyed && currentVideoId == id) favoriteButton.text = if (enabled) "♥  Đã yêu thích" else "♡  Yêu thích" } } }
   }
   private fun toggleFullscreen() {
-    isFullscreen = !isFullscreen; detailsPanel.visibility = if (isFullscreen) View.GONE else View.VISIBLE
-    window.decorView.systemUiVisibility = if (isFullscreen) View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY else View.SYSTEM_UI_FLAG_VISIBLE
+    isFullscreen = !isFullscreen
+    applyOrientationLayout(resources.configuration)
     fullscreenButton.text = if (isFullscreen) "⤢" else "⛶"
   }
   override fun onConfigurationChanged(newConfig: Configuration) {
@@ -202,10 +207,18 @@ class PlaybackActivity : Activity() {
   }
   private fun applyOrientationLayout(configuration: Configuration) {
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    rootLayout.getChildAt(0).layoutParams = LinearLayout.LayoutParams(-1, 0, if (landscape) 1f else 0.5625f)
+    resizeVideoFrame(landscape)
     detailsPanel.visibility = if (landscape || isFullscreen) View.GONE else View.VISIBLE
-    if (landscape) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-    else if (!isFullscreen) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+    if (landscape || isFullscreen) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    else window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+  }
+  private fun resizeVideoFrame(landscape: Boolean) {
+    val video = rootLayout.getChildAt(0)
+    if (landscape || isFullscreen || isInPictureInPictureMode) {
+      video.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+    } else rootLayout.post {
+      video.layoutParams = LinearLayout.LayoutParams(-1, rootLayout.width * 9 / 16)
+    }
   }
   @Deprecated("Back returns from fullscreen before leaving playback")
   override fun onBackPressed() { if (isFullscreen) toggleFullscreen() else super.onBackPressed() }
@@ -224,13 +237,16 @@ class PlaybackActivity : Activity() {
   }
   override fun onPictureInPictureModeChanged(pip: Boolean, config: Configuration) {
     super.onPictureInPictureModeChanged(pip, config)
-    detailsPanel.visibility = if (pip || isFullscreen) View.GONE else View.VISIBLE
+    detailsPanel.visibility = if (pip || isFullscreen || config.orientation == Configuration.ORIENTATION_LANDSCAPE) View.GONE else View.VISIBLE
+    resizeVideoFrame(config.orientation == Configuration.ORIENTATION_LANDSCAPE)
     qualityButton.visibility = if (pip) View.GONE else View.VISIBLE; fullscreenButton.visibility = if (pip) View.GONE else View.VISIBLE; playerView.useController = !pip
   }
   private fun showQualityOptions() {
     val player = playerView.player ?: return; val id = player.currentMediaItem?.mediaId?.takeIf(String::isNotBlank) ?: return
+    val request = ++qualityRequestGeneration
     qualityButton.isEnabled = false
     executor.execute { runCatching { NewPipeVideoRepository.getVideoDetails(id) }.onSuccess { details -> runOnUiThread {
+      if (isDestroyed || request != qualityRequestGeneration || (playerView.player as? Player)?.currentMediaItem?.mediaId != id) return@runOnUiThread
       qualityButton.isEnabled = true; val qualities = details.optJSONArray("qualities") ?: return@runOnUiThread
       if (selectedQualityId.isBlank()) selectedQualityId = details.optString("defaultQualityId")
       val ids = mutableListOf<String>(); val labels = mutableListOf<String>()
@@ -238,11 +254,14 @@ class PlaybackActivity : Activity() {
         if (qid.isNotBlank() && label.isNotBlank()) { ids += qid; labels += if (qid == selectedQualityId) "$label  ✓" else label } }
       if (ids.isEmpty()) return@runOnUiThread
       AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert).setTitle("Chất lượng video").setItems(labels.toTypedArray()) { _, index ->
+        if (request != qualityRequestGeneration || (playerView.player as? Player)?.currentMediaItem?.mediaId != id) return@setItems
         val qid = ids[index]; if (qid == selectedQualityId) return@setItems
+        val qualityRequest = ++qualityRequestGeneration
         val resumePosition = player.currentPosition
         val resumePlayback = player.playWhenReady
         qualityButton.isEnabled = false
         executor.execute { runCatching { NewPipeVideoRepository.resolveVideo(id, qid) }.onSuccess { stream -> runOnUiThread {
+          if (isDestroyed || qualityRequest != qualityRequestGeneration || (playerView.player as? Player)?.currentMediaItem?.mediaId != id) return@runOnUiThread
           selectedQualityId = stream.qualityId; qualityButton.isEnabled = true; PlaybackService.changeQuality(this, stream, id, resumePosition, resumePlayback)
         } }.onFailure { runOnUiThread { qualityButton.isEnabled = true; Toast.makeText(this, "Không đổi được chất lượng video", Toast.LENGTH_SHORT).show() } } }
       }.setNegativeButton("Hủy", null).show()

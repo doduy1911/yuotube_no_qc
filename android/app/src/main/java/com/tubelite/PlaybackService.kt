@@ -41,10 +41,12 @@ class PlaybackService : MediaSessionService() {
   private var recommendationsFor = ""
   private var recommendationsLoading = false
   private var recommendationError: String? = null
+  private var recommendationSource = "related"
   private var recommendationGeneration = 0L
   private var waitingEndedVideoId: String? = null
   private var autoplayToken: Long? = null
   private var autoplayTransition = false
+  private var autoplayFetchGeneration = 0L
   private var recommendationItems: List<VideoSummary> = emptyList()
   private var currentMetadata: VideoMetadata? = null
   private val selectGeneration = PlaybackRequestGeneration()
@@ -121,6 +123,11 @@ class PlaybackService : MediaSessionService() {
       }
     })
     mediaSession = MediaSession.Builder(this, player).setCallback(object : MediaSession.Callback {
+      override fun onPlayerCommandRequest(session: MediaSession, controller: MediaSession.ControllerInfo, playerCommand: Int): Int {
+        if (playerCommand == Player.COMMAND_STOP) invalidatePendingPlayback()
+        return SessionResult.RESULT_SUCCESS
+      }
+
       override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
         val commands = SessionCommands.Builder()
           .add(SessionCommand(ACTION_GET_PLAYBACK_SCREEN_STATE, android.os.Bundle.EMPTY))
@@ -160,6 +167,7 @@ class PlaybackService : MediaSessionService() {
           }
           ACTION_SET_AUTOPLAY -> {
             val enabled = args.getBoolean("enabled", true)
+            autoplayFetchGeneration++
             autoplayCoordinator.setEnabled(enabled)
             playbackSettings.setAutoplayEnabled(enabled)
             autoplayToken = null
@@ -198,6 +206,8 @@ class PlaybackService : MediaSessionService() {
         )
         val position = intent.getLongExtra(EXTRA_START_POSITION_MS, 0L)
         val shouldPlay = intent.getBooleanExtra(EXTRA_SHOULD_PLAY, true)
+        selectGeneration.next(videoId)
+        if (intent.action == ACTION_PLAY) autoplayFetchGeneration++
         setStream(resolved, videoId, position, resetRetry = true, shouldPlay = shouldPlay, manualSelection = intent.action == ACTION_PLAY)
       }
     }
@@ -226,7 +236,7 @@ class PlaybackService : MediaSessionService() {
     val previousMetadata = currentMetadata
     val previousId = currentVideoId
     val previousPosition = player.currentPosition
-    if (previousId.isNotBlank() && previousId != videoId && previousMetadata != null) {
+    if (previousId.isNotBlank() && previousId != videoId && previousMetadata != null && player.playbackState != Player.STATE_ENDED) {
       storage.execute { VideoHistoryStore.recordVideo(this, previousMetadata, previousPosition) }
     }
     currentVideoId = videoId
@@ -242,6 +252,7 @@ class PlaybackService : MediaSessionService() {
       recommendationIds = emptyList()
       recommendationItems = emptyList()
       recommendationError = null
+      recommendationSource = "related"
       recommendationsFor = ""
       recommendationsLoading = false
     }
@@ -278,13 +289,14 @@ class PlaybackService : MediaSessionService() {
 
   private fun persistPosition() {
     val id = currentVideoId
-    val position = player.currentPosition
+    val position = if (player.playbackState == Player.STATE_ENDED) 0L else player.currentPosition
     if (id.isNotBlank()) storage.execute { VideoHistoryStore.savePosition(this, id, position) }
   }
 
   private fun selectVideo(videoId: String) {
     val request = selectGeneration.next(videoId)
     if (!videoId.matches(Regex("[A-Za-z0-9_-]{11}"))) return
+    autoplayFetchGeneration++
     autoplayCoordinator.manualSelection(videoId)
     waitingEndedVideoId = null
     autoplayToken = null
@@ -292,7 +304,7 @@ class PlaybackService : MediaSessionService() {
     recommendationGeneration++
     recommendationsFor = ""
     val previousId = currentVideoId
-    val previousPosition = player.currentPosition
+    val previousPosition = if (player.playbackState == Player.STATE_ENDED) 0L else player.currentPosition
     val previousMetadata = currentMetadata
     if (previousId.isNotBlank() && previousId != videoId && previousMetadata != null) {
       storage.execute { VideoHistoryStore.recordVideo(this, previousMetadata, previousPosition) }
@@ -303,6 +315,7 @@ class PlaybackService : MediaSessionService() {
           if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, 0L, resetRetry = true)
         } }
         .onFailure { mainHandler.post {
+          if (!selectGeneration.isCurrent(request, videoId)) return@post
           Toast.makeText(this, "Không mở được video này", Toast.LENGTH_SHORT).show()
           recommendationsLoading = false
           recommendationsFor = ""
@@ -312,12 +325,7 @@ class PlaybackService : MediaSessionService() {
     }
   }
 
-  private fun recommendationSetJson() = RecommendationSet(
-    currentVideoId,
-    recommendationItems,
-    if (recommendationError == null) "related" else "trending",
-    recommendationError,
-  ).toJson().toString()
+  private fun recommendationSetJson() = RecommendationSet(currentVideoId, recommendationItems, recommendationSource, recommendationError).toJson().toString()
 
   private fun loadRecommendations(videoId: String) {
     if (recommendationsFor == videoId) return
@@ -340,6 +348,7 @@ class PlaybackService : MediaSessionService() {
           val set = result.getOrThrow()
           recommendationItems = set.items
           recommendationIds = set.items.map { it.videoId }
+          recommendationSource = set.source
           recommendationError = set.error
         } else {
           recommendationItems = emptyList()
@@ -363,10 +372,65 @@ class PlaybackService : MediaSessionService() {
   }
 
   private fun beginAutoplay(videoId: String) {
-    when (val decision = autoplayCoordinator.onEnded(videoId, recommendationIds, isNetworkAvailable())) {
+    if (recommendationSource != "related" || autoplayCoordinator.freshCandidateCount(videoId, recommendationIds) > 0) {
+      beginAutoplayWithCandidates(videoId, recommendationIds, emptyList())
+      return
+    }
+    val request = ++autoplayFetchGeneration
+    val relatedIds = recommendationIds
+    recommendationsExecutor.execute {
+      val trendingIds = runCatching {
+        val repository = TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(this))
+        val vn = runCatching { repository.get("vn", forceRefresh = false).items }.getOrDefault(emptyList())
+        val international = runCatching { repository.get("international", forceRefresh = false).items }.getOrDefault(emptyList())
+        (vn + international)
+          .map { it.videoId }.distinct().filter { it != videoId }
+      }.getOrDefault(emptyList())
+      mainHandler.post {
+        if (request != autoplayFetchGeneration || currentVideoId != videoId || player.playbackState != Player.STATE_ENDED || !autoplayCoordinator.isEnabled()) return@post
+        beginAutoplayWithCandidates(videoId, relatedIds, trendingIds)
+      }
+    }
+  }
+
+  private fun beginAutoplayWithCandidates(videoId: String, related: List<String>, trending: List<String>) {
+    when (val decision = autoplayCoordinator.onEnded(videoId, related, isNetworkAvailable(), trending)) {
       is AutoplayDecision.Resolve -> resolveAutoplayCandidate(decision)
+      is AutoplayDecision.NeedFallback -> loadAutoplayFallback(decision.token)
       AutoplayDecision.Stop -> { autoplayToken = null; autoplayTransition = false; publishPlaybackState() }
     }
+  }
+
+  private fun loadAutoplayFallback(token: Long) {
+    if (!autoplayCoordinator.isCurrent(token)) return
+    val request = ++autoplayFetchGeneration
+    recommendationsExecutor.execute {
+      val repository = runCatching { TrendingMusicRepository(YouTubeTrendingSource(), SharedPreferencesTrendingCache(this)) }.getOrNull()
+      val vn = repository?.let { runCatching { it.get("vn", forceRefresh = false).items }.getOrDefault(emptyList()) }.orEmpty()
+      val international = repository?.let { runCatching { it.get("international", forceRefresh = false).items }.getOrDefault(emptyList()) }.orEmpty()
+      val trendingIds = (vn + international).map { it.videoId }.distinct()
+      mainHandler.post {
+        if (request != autoplayFetchGeneration || !autoplayCoordinator.isCurrent(token)) return@post
+        when (val decision = autoplayCoordinator.supplyFallback(token, trendingIds, isNetworkAvailable())) {
+          is AutoplayDecision.Resolve -> resolveAutoplayCandidate(decision)
+          is AutoplayDecision.NeedFallback, AutoplayDecision.Stop -> {
+            autoplayToken = null; autoplayTransition = false
+            recommendationError = "Không phát được bài kế tiếp."
+            publishPlaybackState()
+          }
+        }
+      }
+    }
+  }
+
+  private fun invalidatePendingPlayback() {
+    autoplayFetchGeneration++
+    autoplayCoordinator.cancelPending()
+    autoplayToken = null
+    autoplayTransition = false
+    waitingEndedVideoId = null
+    selectGeneration.next("")
+    publishPlaybackState()
   }
 
   private fun resolveAutoplayCandidate(decision: AutoplayDecision.Resolve) {
@@ -389,8 +453,10 @@ class PlaybackService : MediaSessionService() {
   }
 
   private fun tryNextAutoplayCandidate(token: Long) {
+    if (!autoplayCoordinator.isCurrent(token)) return
     when (val next = autoplayCoordinator.failed(token, isNetworkAvailable())) {
       is AutoplayDecision.Resolve -> resolveAutoplayCandidate(next)
+      is AutoplayDecision.NeedFallback -> loadAutoplayFallback(next.token)
       AutoplayDecision.Stop -> {
         autoplayToken = null
         autoplayTransition = false
