@@ -62,6 +62,7 @@ class PlaybackActivity : Activity() {
   private var gestureStartY = 0f
   private var gestureStartRegion = PlaybackTouchRegion.OTHER
   private var collapseRequested = false
+  private var collapsingToMiniPlayer = false
   private val playerListener = object : Player.Listener {
     override fun onVideoSizeChanged(videoSize: VideoSize) = updatePipAspectRatio(videoSize)
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -288,13 +289,16 @@ class PlaybackActivity : Activity() {
     }
   }
   @Deprecated("Back returns from fullscreen before leaving playback")
-  override fun onBackPressed() { if (isFullscreen) toggleFullscreen() else super.onBackPressed() }
+  override fun onBackPressed() { if (isFullscreen) toggleFullscreen() else if (currentVideoId.isNotBlank()) collapsePlayback() else super.onBackPressed() }
   override fun onDestroy() {
     (playerView.player as? MediaController)?.removeListener(playerListener); playerView.player = null
     controllerFuture?.let(MediaController::releaseFuture); controllerFuture = null; executor.shutdownNow(); super.onDestroy()
   }
   private fun collapsePlayback() {
-    startActivity(Intent(this, MainActivity::class.java).setAction(ACTION_COLLAPSE_TO_MINI_PLAYER).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    collapsingToMiniPlayer = true
+    startActivity(Intent(this, MainActivity::class.java).setAction(ACTION_COLLAPSE_TO_MINI_PLAYER)
+      .putExtra(EXTRA_PENDING_VIDEO_ID, currentVideoId)
+      .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
     finish()
   }
   internal class PlaybackVideoFrame(context: android.content.Context) : FrameLayout(context) {
@@ -311,7 +315,7 @@ class PlaybackActivity : Activity() {
   }
   override fun onUserLeaveHint() {
     super.onUserLeaveHint()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build())
+    if (!collapsingToMiniPlayer && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPictureInPictureMode) enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build())
   }
   override fun onPictureInPictureModeChanged(pip: Boolean, config: Configuration) {
     super.onPictureInPictureModeChanged(pip, config)

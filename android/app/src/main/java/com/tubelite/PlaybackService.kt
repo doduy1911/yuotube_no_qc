@@ -340,6 +340,7 @@ class PlaybackService : MediaSessionService() {
     currentVideoId = videoId
     currentMetadata = null
     currentQualityId = ""
+    selectionScreenState = PlaybackScreenState(videoId = videoId).selecting(videoId)
     player.pause()
     player.clearMediaItems()
     recommendationItems = emptyList()

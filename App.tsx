@@ -1,6 +1,7 @@
 import React, {useCallback, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   FlatList,
   Image,
   Keyboard,
@@ -63,6 +64,24 @@ function App() {
   }, []);
 
   React.useEffect(() => { loadLibrary(); }, [loadLibrary]);
+
+  React.useEffect(() => {
+    const collapsed = DeviceEventEmitter.addListener('miniPlayerCollapsed', () => {
+      generation.current++;
+      loadingMore.current = false;
+      setActiveTab('home');
+      setQuery('');
+      setResults([]);
+      setNextPageToken(null);
+      setSearchError('');
+      setHasSearched(false);
+      setIsSearching(false);
+      setIsLoadingMore(false);
+      void loadLibrary();
+    });
+    const closed = DeviceEventEmitter.addListener('miniPlayerClosed', () => { void loadLibrary(); });
+    return () => { collapsed.remove(); closed.remove(); };
+  }, [loadLibrary]);
 
   async function openVideo(videoId: string) {
     try {
@@ -241,11 +260,11 @@ function App() {
         </View>
 
         <View style={styles.bottomBar}>
-          <Pressable accessibilityLabel="Open home" onPress={() => { setActiveTab('home'); loadLibrary(); }} style={styles.navItem}>
+          <Pressable testID="nav-home" accessibilityLabel="Open home" onPress={() => { setActiveTab('home'); loadLibrary(); }} style={styles.navItem}>
             <Text style={activeTab === 'home' ? styles.navIconActive : styles.navIcon}>⌂</Text>
             <Text style={activeTab === 'home' ? styles.navLabelActive : styles.navLabel}>Trang chủ</Text>
           </Pressable>
-          <Pressable accessibilityLabel="Open library" onPress={() => { setActiveTab('library'); loadLibrary(); }} style={styles.navItem}>
+          <Pressable testID="nav-library" accessibilityLabel="Open library" onPress={() => { setActiveTab('library'); loadLibrary(); }} style={styles.navItem}>
             <Text style={activeTab === 'library' ? styles.navIconActive : styles.navIcon}>◷</Text>
             <Text style={activeTab === 'library' ? styles.navLabelActive : styles.navLabel}>Thư viện</Text>
           </Pressable>
