@@ -68,6 +68,10 @@ class PlaybackActivity : Activity() {
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
       qualityRequestGeneration++
       val newId = mediaItem?.mediaId.orEmpty()
+      // A newly launched Activity can connect to the previous session item before
+      // the service processes the pending selection. Keep the requested ID until
+      // that selection reaches the player instead of adopting stale session state.
+      if (currentVideoId.isNotBlank() && newId != currentVideoId) return
       if (newId != qualityForVideoId) { qualityForVideoId = newId; selectedQualityId = "" }
       qualityButton.isEnabled = true
       refreshFromController()
