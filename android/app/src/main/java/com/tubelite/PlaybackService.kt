@@ -135,6 +135,7 @@ class PlaybackService : MediaSessionService() {
           .add(SessionCommand(ACTION_GET_PLAYBACK_SCREEN_STATE, android.os.Bundle.EMPTY))
           .add(SessionCommand(ACTION_SELECT_VIDEO, android.os.Bundle.EMPTY))
           .add(SessionCommand(ACTION_SET_AUTOPLAY, android.os.Bundle.EMPTY))
+          .add(SessionCommand(ACTION_CLOSE_PLAYBACK, android.os.Bundle.EMPTY))
           .build()
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
           .setAvailableSessionCommands(commands)
@@ -176,6 +177,22 @@ class PlaybackService : MediaSessionService() {
             autoplayTransition = false
             if (!enabled) waitingEndedVideoId = null
             if (enabled && player.playbackState == Player.STATE_ENDED && currentVideoId.isNotBlank() && !recommendationsLoading) beginAutoplay(currentVideoId)
+            publishPlaybackState()
+            Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+          }
+          ACTION_CLOSE_PLAYBACK -> {
+            persistPosition()
+            invalidatePendingPlayback()
+            player.pause()
+            player.clearMediaItems()
+            currentVideoId = ""
+            currentQualityId = ""
+            currentMetadata = null
+            selectionScreenState = PlaybackScreenState()
+            recommendationIds = emptyList()
+            recommendationItems = emptyList()
+            recommendationsFor = ""
+            recommendationsLoading = false
             publishPlaybackState()
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
           }
@@ -543,6 +560,7 @@ class PlaybackService : MediaSessionService() {
     internal const val ACTION_GET_PLAYBACK_SCREEN_STATE = "com.tubelite.GET_PLAYBACK_SCREEN_STATE"
     internal const val ACTION_SELECT_VIDEO = "com.tubelite.SELECT_VIDEO"
     internal const val ACTION_SET_AUTOPLAY = "com.tubelite.SET_AUTOPLAY"
+    internal const val ACTION_CLOSE_PLAYBACK = "com.tubelite.CLOSE_PLAYBACK"
 
     internal fun select(context: Context, videoId: String, qualityId: String) {
       val intent = Intent(context, PlaybackService::class.java)

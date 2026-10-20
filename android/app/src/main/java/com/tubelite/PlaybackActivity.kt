@@ -3,11 +3,13 @@ package com.tubelite
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.PictureInPictureParams
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -31,6 +33,7 @@ class PlaybackActivity : Activity() {
   companion object {
     internal const val EXTRA_PENDING_VIDEO_ID = "pending_video_id"
     internal const val EXTRA_QUALITY_ID = "quality_id"
+    internal const val ACTION_COLLAPSE_TO_MINI_PLAYER = "com.tubelite.COLLAPSE_TO_MINI_PLAYER"
   }
 
   private lateinit var playerView: PlayerView
@@ -47,6 +50,7 @@ class PlaybackActivity : Activity() {
   private lateinit var playbackStatusView: TextView
   private lateinit var retryPlaybackButton: TextView
   private lateinit var rootLayout: LinearLayout
+  private lateinit var videoFrame: PlaybackVideoFrame
   private val executor = Executors.newSingleThreadExecutor()
   private var qualityRequestGeneration = 0L
   private var selectedQualityId = ""
@@ -54,6 +58,10 @@ class PlaybackActivity : Activity() {
   private var controllerFuture: ListenableFuture<MediaController>? = null
   private var isFullscreen = false
   private var currentVideoId = ""
+  private var gestureStartX = 0f
+  private var gestureStartY = 0f
+  private var gestureStartRegion = PlaybackTouchRegion.OTHER
+  private var collapseRequested = false
   private val playerListener = object : Player.Listener {
     override fun onVideoSizeChanged(videoSize: VideoSize) = updatePipAspectRatio(videoSize)
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -112,15 +120,38 @@ class PlaybackActivity : Activity() {
     }
     qualityButton = overlay("⚙", "Chọn chất lượng video") { showQualityOptions() }
     fullscreenButton = overlay("⛶", "Toàn màn hình") { toggleFullscreen() }
-    val video = FrameLayout(this).apply {
+    videoFrame = PlaybackVideoFrame(this).apply {
       setBackgroundColor(Color.BLACK); addView(playerView, FrameLayout.LayoutParams(-1, -1))
       addView(playbackStatusView, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
       addView(retryPlaybackButton, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER).apply { topMargin = dp(44) })
       addView(qualityButton, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = dp(8); marginEnd = dp(8) })
       addView(fullscreenButton, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { bottomMargin = dp(8); marginEnd = dp(8) })
     }
+    videoFrame.onMotionEvent = { event, width, height ->
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          gestureStartX = event.x
+          gestureStartY = event.y
+          gestureStartRegion = when {
+            event.y >= height - dp(88) -> PlaybackTouchRegion.SEEK_BAR
+            event.x >= width - dp(72) && event.y <= dp(64) -> PlaybackTouchRegion.CONTROLS
+            event.x >= width - dp(88) && event.y >= height - dp(88) -> PlaybackTouchRegion.CONTROLS
+            else -> PlaybackTouchRegion.VIDEO
+          }
+        }
+        MotionEvent.ACTION_UP -> {
+          val decision = PlaybackGesturePolicy.evaluate(gestureStartX, gestureStartY, event.x, event.y, gestureStartRegion, dp(88).toFloat())
+          if (decision == PlaybackGestureDecision.COLLAPSE && !collapseRequested) {
+            collapseRequested = true
+            collapsePlayback()
+          }
+          gestureStartRegion = PlaybackTouchRegion.OTHER
+        }
+        MotionEvent.ACTION_CANCEL -> gestureStartRegion = PlaybackTouchRegion.OTHER
+      }
+    }
     rootLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(10, 10, 10)) }
-    rootLayout.addView(video, LinearLayout.LayoutParams(-1, 0))
+    rootLayout.addView(videoFrame, LinearLayout.LayoutParams(-1, 0))
     detailsPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
     titleView = text(19f, Color.WHITE).apply { maxLines = 2 }
     channelView = text(14f, Color.LTGRAY).apply { setPadding(0, dp(4), 0, dp(8)) }
@@ -261,6 +292,17 @@ class PlaybackActivity : Activity() {
   override fun onDestroy() {
     (playerView.player as? MediaController)?.removeListener(playerListener); playerView.player = null
     controllerFuture?.let(MediaController::releaseFuture); controllerFuture = null; executor.shutdownNow(); super.onDestroy()
+  }
+  private fun collapsePlayback() {
+    startActivity(Intent(this, MainActivity::class.java).setAction(ACTION_COLLAPSE_TO_MINI_PLAYER).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    finish()
+  }
+  internal class PlaybackVideoFrame(context: android.content.Context) : FrameLayout(context) {
+    var onMotionEvent: ((MotionEvent, Int, Int) -> Unit)? = null
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+      onMotionEvent?.invoke(event, width, height)
+      return super.dispatchTouchEvent(event)
+    }
   }
   private fun updatePipAspectRatio(size: VideoSize) {
     if (size.width <= 0 || size.height <= 0) return
