@@ -28,6 +28,11 @@ import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class PlaybackActivity : Activity() {
+  companion object {
+    internal const val EXTRA_PENDING_VIDEO_ID = "pending_video_id"
+    internal const val EXTRA_QUALITY_ID = "quality_id"
+  }
+
   private lateinit var playerView: PlayerView
   private lateinit var qualityButton: TextView
   private lateinit var fullscreenButton: TextView
@@ -39,6 +44,8 @@ class PlaybackActivity : Activity() {
   private lateinit var recommendationsList: LinearLayout
   private lateinit var recommendationsHeading: TextView
   private lateinit var recommendationsStatus: TextView
+  private lateinit var playbackStatusView: TextView
+  private lateinit var retryPlaybackButton: TextView
   private lateinit var rootLayout: LinearLayout
   private val executor = Executors.newSingleThreadExecutor()
   private var qualityRequestGeneration = 0L
@@ -70,6 +77,7 @@ class PlaybackActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    currentVideoId = intent.getStringExtra(EXTRA_PENDING_VIDEO_ID).orEmpty()
     window.decorView.setBackgroundColor(Color.rgb(10, 10, 10))
     window.setStatusBarColor(Color.rgb(10, 10, 10)); window.setNavigationBarColor(Color.rgb(10, 10, 10))
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -84,10 +92,30 @@ class PlaybackActivity : Activity() {
 
   private fun buildLayout() {
     playerView = PlayerView(this).apply { useController = true; setBackgroundColor(Color.BLACK); setShutterBackgroundColor(Color.BLACK); resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT }
+    playbackStatusView = text(14f, Color.WHITE).apply {
+      gravity = Gravity.CENTER
+      text = if (currentVideoId.isNotBlank()) "Đang tải video…" else ""
+    }
+    retryPlaybackButton = text(14f, Color.WHITE).apply {
+      text = "Thử lại"
+      gravity = Gravity.CENTER
+      visibility = View.GONE
+      setOnClickListener {
+        (playerView.player as? MediaController)?.sendCustomCommand(
+          SessionCommand(PlaybackService.ACTION_SELECT_VIDEO, android.os.Bundle.EMPTY),
+          android.os.Bundle().apply {
+            putString("videoId", currentVideoId)
+            putString("qualityId", intent.getStringExtra(EXTRA_QUALITY_ID).orEmpty())
+          },
+        )
+      }
+    }
     qualityButton = overlay("⚙", "Chọn chất lượng video") { showQualityOptions() }
     fullscreenButton = overlay("⛶", "Toàn màn hình") { toggleFullscreen() }
     val video = FrameLayout(this).apply {
       setBackgroundColor(Color.BLACK); addView(playerView, FrameLayout.LayoutParams(-1, -1))
+      addView(playbackStatusView, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+      addView(retryPlaybackButton, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER).apply { topMargin = dp(44) })
       addView(qualityButton, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { topMargin = dp(8); marginEnd = dp(8) })
       addView(fullscreenButton, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply { bottomMargin = dp(8); marginEnd = dp(8) })
     }
@@ -140,6 +168,14 @@ class PlaybackActivity : Activity() {
   private fun renderSnapshot(extras: android.os.Bundle) {
     if (isDestroyed) return
     val id = extras.getString("videoId").orEmpty()
+    val status = extras.getString("status").orEmpty()
+    if (id.isNotBlank() && id == currentVideoId) {
+      when (status) {
+        "loading" -> { playbackStatusView.text = "Đang tải video…"; retryPlaybackButton.visibility = View.GONE }
+        "error" -> { playbackStatusView.text = extras.getString("error") ?: "Không mở được video này."; retryPlaybackButton.visibility = View.VISIBLE }
+        else -> { playbackStatusView.text = ""; retryPlaybackButton.visibility = View.GONE }
+      }
+    }
     autoplayButton.text = "Tự phát bài tiếp theo: ${if (extras.getBoolean("autoplayEnabled", true)) "Bật" else "Tắt"}"
     if (id.isNotBlank() && id == currentVideoId && extras.getBoolean("autoplayTransition", false)) recommendationsStatus.text = "Đang chuyển sang bài tiếp theo…"
     if (id != currentVideoId || id.isBlank()) return

@@ -50,7 +50,7 @@ class PlaybackService : MediaSessionService() {
   private var recommendationItems: List<VideoSummary> = emptyList()
   private var currentMetadata: VideoMetadata? = null
   private val selectGeneration = PlaybackRequestGeneration()
-  private val selectionCoordinator = PlaybackSelectionCoordinator<ResolvedVideoStream>(resolver)
+  private val selectionCoordinator = PlaybackSelectionCoordinator<Pair<ResolvedVideoStream, Long>>(resolver)
   private var selectionScreenState = PlaybackScreenState()
   private val saveProgress = object : Runnable {
     override fun run() {
@@ -164,7 +164,7 @@ class PlaybackService : MediaSessionService() {
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, state))
           }
           ACTION_SELECT_VIDEO -> {
-            selectVideo(args.getString("videoId").orEmpty())
+            selectVideo(args.getString("videoId").orEmpty(), args.getString("qualityId").orEmpty())
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
           }
           ACTION_SET_AUTOPLAY -> {
@@ -188,7 +188,9 @@ class PlaybackService : MediaSessionService() {
   override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == ACTION_PLAY || intent?.action == ACTION_CHANGE_QUALITY) {
+    if (intent?.action == ACTION_SELECT_VIDEO) {
+      selectVideo(intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty(), intent.getStringExtra(EXTRA_QUALITY_ID).orEmpty())
+    } else if (intent?.action == ACTION_PLAY || intent?.action == ACTION_CHANGE_QUALITY) {
       val streamUrl = intent.getStringExtra(EXTRA_STREAM_URL)
       if (!streamUrl.isNullOrBlank()) {
         val videoId = intent.getStringExtra(EXTRA_VIDEO_ID).orEmpty()
@@ -302,7 +304,7 @@ class PlaybackService : MediaSessionService() {
     if (id.isNotBlank()) storage.execute { VideoHistoryStore.savePosition(this, id, position) }
   }
 
-  private fun selectVideo(videoId: String) {
+  private fun selectVideo(videoId: String, qualityId: String = "") {
     if (!videoId.matches(Regex("[A-Za-z0-9_-]{11}"))) return
     val request = selectGeneration.next(videoId)
     autoplayFetchGeneration++
@@ -329,11 +331,15 @@ class PlaybackService : MediaSessionService() {
     recommendationsFor = ""
     selectionCoordinator.select(
       selectedVideoId = videoId,
-      qualityId = "",
-      resolver = NewPipeVideoRepository::resolveVideo,
+      qualityId = qualityId,
+      resolver = { selectedId, selectedQuality ->
+        val row = runCatching { VideoHistoryDatabase.get(this).videoHistoryDao().getById(selectedId) }.getOrNull()
+        val resumePosition = row?.positionMs?.takeIf { row.durationMs == 0L || it < row.durationMs - 10_000L } ?: 0L
+        NewPipeVideoRepository.resolveVideo(selectedId, selectedQuality) to resumePosition
+      },
       onState = { state -> mainHandler.post { selectionScreenState = state; publishPlaybackState() } },
-      onSuccess = { resolved -> mainHandler.post {
-        if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, 0L, resetRetry = true)
+      onSuccess = { (resolved, resumePosition) -> mainHandler.post {
+        if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, resumePosition, resetRetry = true, manualSelection = true)
       } },
       onFailure = { error -> mainHandler.post {
         if (!selectGeneration.isCurrent(request, videoId)) return@post
@@ -512,6 +518,7 @@ class PlaybackService : MediaSessionService() {
 
   private fun playbackStatus(): String = when {
     selectionScreenState.videoId == currentVideoId && selectionScreenState.status == "error" -> "error"
+    selectionScreenState.videoId == currentVideoId && selectionScreenState.status == "loading" && player.playbackState == Player.STATE_IDLE -> "loading"
     !::player.isInitialized -> "idle"
     player.playbackState == Player.STATE_ENDED -> "ended"
     player.isPlaying -> "playing"
@@ -536,6 +543,14 @@ class PlaybackService : MediaSessionService() {
     internal const val ACTION_GET_PLAYBACK_SCREEN_STATE = "com.tubelite.GET_PLAYBACK_SCREEN_STATE"
     internal const val ACTION_SELECT_VIDEO = "com.tubelite.SELECT_VIDEO"
     internal const val ACTION_SET_AUTOPLAY = "com.tubelite.SET_AUTOPLAY"
+
+    internal fun select(context: Context, videoId: String, qualityId: String) {
+      val intent = Intent(context, PlaybackService::class.java)
+        .setAction(ACTION_SELECT_VIDEO)
+        .putExtra(EXTRA_VIDEO_ID, videoId)
+        .putExtra(EXTRA_QUALITY_ID, qualityId)
+      ContextCompat.startForegroundService(context, intent)
+    }
 
     internal fun start(context: Context, resolved: ResolvedVideoStream, videoId: String, startPositionMs: Long) {
       val intent = Intent(context, PlaybackService::class.java)

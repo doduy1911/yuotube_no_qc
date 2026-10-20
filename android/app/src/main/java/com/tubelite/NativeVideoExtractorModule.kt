@@ -35,21 +35,23 @@ class NativeVideoExtractorModule(
 
   @ReactMethod
   fun openVideo(videoId: String, qualityId: String, promise: Promise) {
-    executor.execute {
-      try {
-        val resolved = NewPipeVideoRepository.resolveVideo(videoId, qualityId)
-        val context = reactApplicationContext
-        val row = VideoHistoryDatabase.get(context).videoHistoryDao().getById(videoId)
-        val resumePosition = row?.positionMs?.takeIf { row.durationMs == 0L || it < row.durationMs - 10_000L } ?: 0L
-        VideoHistoryStore.recordVideo(context, resolved.metadata, resumePosition)
-        PlaybackService.start(context, resolved, videoId, resumePosition)
-        context.startActivity(
-          Intent(context, PlaybackActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-        promise.resolve(true)
-      } catch (error: Throwable) {
-        promise.reject("PLAYBACK_FAILED", error.message ?: "Không phát được video này.", error)
-      }
+    val request = PlaybackOpenRequest.parse(videoId, qualityId)
+    if (request == null) {
+      promise.reject("INVALID_VIDEO_ID", "Liên kết video không hợp lệ.")
+      return
+    }
+    try {
+      val context = reactApplicationContext
+      PlaybackService.select(context, request.videoId, request.qualityId)
+      context.startActivity(
+        Intent(context, PlaybackActivity::class.java)
+          .putExtra(PlaybackActivity.EXTRA_PENDING_VIDEO_ID, request.videoId)
+          .putExtra(PlaybackActivity.EXTRA_QUALITY_ID, request.qualityId)
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+      )
+      promise.resolve(true)
+    } catch (error: Throwable) {
+      promise.reject("PLAYBACK_FAILED", error.message ?: "Không mở được màn hình phát.", error)
     }
   }
 
