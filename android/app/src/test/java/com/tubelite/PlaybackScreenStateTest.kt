@@ -16,12 +16,24 @@ class PlaybackScreenStateTest {
   }
 
   @Test fun selectingNewVideoClearsOldRecommendationMetadataImmediately() {
-    val state = PlaybackScreenState(videoId = "video000000", title = "Old", recommendations = listOf("video000002"))
+    val state = PlaybackScreenState(videoId = "video000000", title = "Old", status = "playing", recommendations = listOf("video000002"))
     val changed = state.selecting("video000001")
     assertEquals("video000001", changed.videoId)
+    assertEquals("loading", changed.status)
     assertNull(changed.title)
     assertTrue(changed.recommendations.isEmpty())
     assertTrue(changed.recommendationsLoading)
+    assertNull(changed.error)
+  }
+
+  @Test fun failureAndRetryRetainSelectionAndExposeRetryableState() {
+    val failed = PlaybackScreenState(videoId = "video000001").failed("Không tải được video")
+    assertEquals("video000001", failed.videoId)
+    assertEquals("error", failed.status)
+    assertEquals("Không tải được video", failed.error)
+    val retrying = failed.selecting("video000001")
+    assertEquals("loading", retrying.status)
+    assertNull(retrying.error)
   }
 
   @Test fun snapshotIncludesPlaybackAndRecommendationState() {

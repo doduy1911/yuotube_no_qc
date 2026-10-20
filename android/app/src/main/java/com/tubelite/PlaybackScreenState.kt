@@ -11,7 +11,17 @@ internal data class PlaybackScreenState(
   val recommendationsLoading: Boolean = false,
   val error: String? = null,
 ) {
-  fun selecting(newVideoId: String) = copy(videoId = newVideoId, title = null, channelTitle = null, recommendations = emptyList(), recommendationsLoading = true, error = null)
+  fun selecting(newVideoId: String) = copy(
+    videoId = newVideoId,
+    title = null,
+    channelTitle = null,
+    status = "loading",
+    recommendations = emptyList(),
+    recommendationsLoading = true,
+    error = null,
+  )
+
+  fun failed(message: String) = copy(status = "error", recommendationsLoading = false, error = message)
 }
 
 internal class PlaybackRequestGeneration {

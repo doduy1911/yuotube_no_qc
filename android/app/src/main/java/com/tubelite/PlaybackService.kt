@@ -50,6 +50,8 @@ class PlaybackService : MediaSessionService() {
   private var recommendationItems: List<VideoSummary> = emptyList()
   private var currentMetadata: VideoMetadata? = null
   private val selectGeneration = PlaybackRequestGeneration()
+  private val selectionCoordinator = PlaybackSelectionCoordinator<ResolvedVideoStream>(resolver)
+  private var selectionScreenState = PlaybackScreenState()
   private val saveProgress = object : Runnable {
     override fun run() {
       persistPosition()
@@ -151,13 +153,13 @@ class PlaybackService : MediaSessionService() {
               putString("videoId", currentVideoId)
               putString("title", currentMetadata?.title)
               putString("channelTitle", currentMetadata?.channelTitle)
-              putString("status", when { player.playbackState == Player.STATE_ENDED -> "ended"; player.isPlaying -> "playing"; player.playbackState == Player.STATE_BUFFERING -> "loading"; currentVideoId.isBlank() -> "idle"; else -> "paused" })
+              putString("status", playbackStatus())
               putLong("positionMs", player.currentPosition.coerceAtLeast(0L))
               putBoolean("autoplayEnabled", autoplayCoordinator.isEnabled())
               putBoolean("recommendationsLoading", recommendationsLoading)
               putBoolean("autoplayTransition", autoplayTransition)
               putString("recommendationsJson", recommendationSetJson())
-              putString("error", recommendationError)
+              putString("error", selectionScreenState.error ?: recommendationError)
             }
             Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, state))
           }
@@ -242,6 +244,13 @@ class PlaybackService : MediaSessionService() {
     currentVideoId = videoId
     currentQualityId = resolved.qualityId
     currentMetadata = resolved.metadata
+    selectionScreenState = PlaybackScreenState(
+      videoId = videoId,
+      title = resolved.metadata.title,
+      channelTitle = resolved.metadata.channelTitle,
+      status = "loading",
+      autoplayEnabled = autoplayCoordinator.isEnabled(),
+    )
     val metadataSnapshot = resolved.metadata
     storage.execute { VideoHistoryStore.recordVideo(this, metadataSnapshot, positionMs) }
     if (resetRetry) refreshAttempted = false
@@ -294,8 +303,8 @@ class PlaybackService : MediaSessionService() {
   }
 
   private fun selectVideo(videoId: String) {
-    val request = selectGeneration.next(videoId)
     if (!videoId.matches(Regex("[A-Za-z0-9_-]{11}"))) return
+    val request = selectGeneration.next(videoId)
     autoplayFetchGeneration++
     autoplayCoordinator.manualSelection(videoId)
     waitingEndedVideoId = null
@@ -309,20 +318,32 @@ class PlaybackService : MediaSessionService() {
     if (previousId.isNotBlank() && previousId != videoId && previousMetadata != null) {
       storage.execute { VideoHistoryStore.recordVideo(this, previousMetadata, previousPosition) }
     }
-    resolver.execute {
-      runCatching { NewPipeVideoRepository.resolveVideo(videoId) }
-        .onSuccess { resolved -> mainHandler.post {
-          if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, 0L, resetRetry = true)
-        } }
-        .onFailure { mainHandler.post {
-          if (!selectGeneration.isCurrent(request, videoId)) return@post
-          Toast.makeText(this, "Không mở được video này", Toast.LENGTH_SHORT).show()
-          recommendationsLoading = false
-          recommendationsFor = ""
-          loadRecommendations(currentVideoId)
-          publishPlaybackState()
-        } }
-    }
+    currentVideoId = videoId
+    currentMetadata = null
+    currentQualityId = ""
+    player.pause()
+    player.clearMediaItems()
+    recommendationItems = emptyList()
+    recommendationIds = emptyList()
+    recommendationsLoading = false
+    recommendationsFor = ""
+    selectionCoordinator.select(
+      selectedVideoId = videoId,
+      qualityId = "",
+      resolver = NewPipeVideoRepository::resolveVideo,
+      onState = { state -> mainHandler.post { selectionScreenState = state; publishPlaybackState() } },
+      onSuccess = { resolved -> mainHandler.post {
+        if (selectGeneration.isCurrent(request, videoId)) setStream(resolved, videoId, 0L, resetRetry = true)
+      } },
+      onFailure = { error -> mainHandler.post {
+        if (!selectGeneration.isCurrent(request, videoId)) return@post
+        selectionScreenState = selectionScreenState.failed(error.message ?: "Không mở được video này. Hãy thử lại.")
+        recommendationsLoading = false
+        publishPlaybackState()
+      } },
+    )
+    selectionScreenState = selectionScreenState.selecting(videoId)
+    publishPlaybackState()
   }
 
   private fun recommendationSetJson() = RecommendationSet(currentVideoId, recommendationItems, recommendationSource, recommendationError).toJson().toString()
@@ -478,21 +499,25 @@ class PlaybackService : MediaSessionService() {
       putString("videoId", currentVideoId)
       putString("title", currentMetadata?.title)
       putString("channelTitle", currentMetadata?.channelTitle)
-      putString("status", if (!::player.isInitialized) "idle" else when {
-        player.playbackState == Player.STATE_ENDED -> "ended"
-        player.isPlaying -> "playing"
-        player.playbackState == Player.STATE_BUFFERING -> "loading"
-        currentVideoId.isBlank() -> "idle"
-        else -> "paused"
-      })
+      putString("status", playbackStatus())
       putLong("positionMs", if (::player.isInitialized) player.currentPosition.coerceAtLeast(0L) else 0L)
       putBoolean("autoplayEnabled", if (::autoplayCoordinator.isInitialized) autoplayCoordinator.isEnabled() else true)
       putBoolean("recommendationsLoading", recommendationsLoading)
       putBoolean("autoplayTransition", autoplayTransition)
       putString("recommendationsJson", recommendationSetJson())
-      putString("error", recommendationError)
+      putString("error", selectionScreenState.error ?: recommendationError)
     }
     mediaSession?.setSessionExtras(extras)
+  }
+
+  private fun playbackStatus(): String = when {
+    selectionScreenState.videoId == currentVideoId && selectionScreenState.status == "error" -> "error"
+    !::player.isInitialized -> "idle"
+    player.playbackState == Player.STATE_ENDED -> "ended"
+    player.isPlaying -> "playing"
+    player.playbackState == Player.STATE_BUFFERING -> "loading"
+    currentVideoId.isBlank() -> "idle"
+    else -> "paused"
   }
 
   companion object {
